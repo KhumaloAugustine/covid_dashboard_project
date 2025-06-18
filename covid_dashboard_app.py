@@ -111,7 +111,7 @@ st.header("📈 COVID-19 Data Trends & Insights")
 st.write(f"Displaying data for **{', '.join(selected_countries)}** from **{date_range[0].strftime('%Y-%m-%d')}** to **{date_range[1].strftime('%Y-%m-%d')}**.")
 
 # 5.1 Time Series Plots
-st.subheader("5.1 Time Series Trends")
+st.subheader("5.1 Daily Time Series Trends")
 col_ts1, col_ts2 = st.columns(2)
 
 with col_ts1:
@@ -139,8 +139,52 @@ with col_ts2:
 
 st.markdown("---")
 
-# 5.2 Distributions & Relationships
-st.subheader("5.2 Key Distributions and Relationships")
+# --- New Section: Additional Time-Series Analysis (Cumulative & Rolling Averages) ---
+st.subheader("5.2 Additional Time-Series Analysis: Cumulative & Rolling Averages")
+st.write("These plots provide a 'survival-like' perspective by showing cumulative totals and smoothed trends.")
+
+# Sort data by country and date to ensure correct cumulative sums and rolling averages
+# Ensure 'country' and 'date' are in the index if they are not already.
+# Or better, keep them as columns and sort, then group by 'country'.
+filtered_data_sorted = filtered_data.sort_values(by=['country', 'date'])
+
+col_add_ts1, col_add_ts2 = st.columns(2)
+
+with col_add_ts1:
+    st.write("#### Cumulative New Deaths Over Time")
+    # Group by country and calculate cumulative sum of New_deaths
+    # Assign directly to a new column in filtered_data_sorted to avoid merge issues
+    filtered_data_sorted['Cumulative_New_Deaths'] = filtered_data_sorted.groupby('country')['New_deaths'].cumsum()
+
+    fig_cum_deaths, ax_cum_deaths = plt.subplots(figsize=(10, 6))
+    sns.lineplot(data=filtered_data_sorted, x='date', y='Cumulative_New_Deaths', hue='country', marker='o', ax=ax_cum_deaths)
+    ax_cum_deaths.set_title('Cumulative New Deaths Over Time')
+    ax_cum_deaths.set_xlabel('Date')
+    ax_cum_deaths.set_ylabel('Cumulative New Deaths')
+    ax_cum_deaths.tick_params(axis='x', rotation=45)
+    ax_cum_deaths.ticklabel_format(style='plain', axis='y') # Prevent scientific notation
+    plt.tight_layout()
+    st.pyplot(fig_cum_deaths)
+
+with col_add_ts2:
+    st.write("#### 7-Day Rolling Average of New Deaths")
+    # Calculate 7-day rolling average of New_deaths by country
+    # Assign directly to a new column in filtered_data_sorted
+    filtered_data_sorted['Rolling_Avg_Deaths'] = filtered_data_sorted.groupby('country')['New_deaths'].transform(lambda x: x.rolling(window=7, min_periods=1).mean())
+
+    fig_roll_deaths, ax_roll_deaths = plt.subplots(figsize=(10, 6))
+    sns.lineplot(data=filtered_data_sorted, x='date', y='Rolling_Avg_Deaths', hue='country', marker='o', ax=ax_roll_deaths)
+    ax_roll_deaths.set_title('7-Day Rolling Average of New Deaths')
+    ax_roll_deaths.set_xlabel('Date')
+    ax_roll_deaths.set_ylabel('Avg. New Deaths (Past 7 Days)')
+    ax_roll_deaths.tick_params(axis='x', rotation=45)
+    plt.tight_layout()
+    st.pyplot(fig_roll_deaths)
+
+st.markdown("---")
+
+# 5.3 Distributions & Relationships (previous section 5.2, now 5.3)
+st.subheader("5.3 Key Distributions and Relationships")
 
 col_dist1, col_dist2 = st.columns(2)
 
@@ -364,6 +408,13 @@ st.write(
     -   **Supervised Machine Learning (Regression):** Building and evaluating a `RandomForestRegressor` from `scikit-learn` to predict continuous outcomes.
     -   **Model Persistence:** Efficiently saving and loading trained models with `joblib`.
     -   **Interactive Dashboard Development:** Creating a dynamic and user-friendly web application with `Streamlit`.
+
+    The dataset used for this project is "COVID vaccination vs. mortality" from Kaggle:
+    [https://www.kaggle.com/datasets/sinakaraji/covid-vaccination-vs-mortality](https://www.kaggle.com/datasets/sinakaraji/covid-vaccination-vs-mortality)
+
+    Context of the dataset: The COVID-19 pandemic has caused significant global mortality. This dataset was generated to
+    investigate the impact of coronavirus vaccinations on coronavirus mortality, providing data on vaccination progress
+    and death counts.
 
     This dashboard serves as a hands-on example of applying data science to real-world health data.
     """
