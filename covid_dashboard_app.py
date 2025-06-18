@@ -105,8 +105,34 @@ if filtered_data.empty:
     st.warning("No data available for the selected filters. Please adjust your selections.")
     st.stop() # Stop execution if no data to display
 
-# --- 5. Descriptive Analysis (EDA) - Main Section ---
-st.header("📈 COVID-19 Data Trends & Insights")
+# --- 4.1 Data Statistics Overview (New Section) ---
+st.header("📈 Data Statistics Overview")
+st.write("View key statistics for the selected countries and date range.")
+
+st.subheader("4.1 Population per Country")
+# Get the latest population for each selected country within the filtered data
+# We'll take the maximum population recorded for each country within the date range,
+# as population values should generally be stable or increase slowly.
+population_per_country = filtered_data.groupby('country')['population'].max().reset_index()
+population_per_country.columns = ['Country', 'Latest Population']
+
+st.dataframe(population_per_country.set_index('Country'))
+
+# Plotting population per country
+fig_pop_country, ax_pop_country = plt.subplots(figsize=(10, 6))
+sns.barplot(data=population_per_country, x='Latest Population', y='Country', palette='crest', ax=ax_pop_country)
+ax_pop_country.set_title('Latest Population per Selected Country')
+ax_pop_country.set_xlabel('Population')
+ax_pop_country.set_ylabel('Country')
+ax_pop_country.ticklabel_format(style='plain', axis='x') # Prevent scientific notation
+plt.tight_layout()
+st.pyplot(fig_pop_country)
+
+st.caption("Note: 'Latest Population' refers to the maximum population recorded for that country within the selected date range.")
+st.markdown("---")
+
+# --- 5. Descriptive Analysis (EDA) - Main Section (section numbers adjusted) ---
+st.header("📊 COVID-19 Data Trends & Insights")
 st.write(f"Displaying data for **{', '.join(selected_countries)}** from **{date_range[0].strftime('%Y-%m-%d')}** to **{date_range[1].strftime('%Y-%m-%d')}**.")
 
 # 5.1 Time Series Plots
@@ -143,16 +169,12 @@ st.subheader("5.2 Additional Time-Series Analysis: Cumulative & Rolling Averages
 st.write("These plots provide a 'survival-like' perspective by showing cumulative totals and smoothed trends.")
 
 # Sort data by country and date to ensure correct cumulative sums and rolling averages
-# Ensure 'country' and 'date' are in the index if they are not already.
-# Or better, keep them as columns and sort, then group by 'country'.
 filtered_data_sorted = filtered_data.sort_values(by=['country', 'date'])
 
 col_add_ts1, col_add_ts2 = st.columns(2)
 
 with col_add_ts1:
     st.write("#### Cumulative New Deaths Over Time")
-    # Group by country and calculate cumulative sum of New_deaths
-    # Assign directly to a new column in filtered_data_sorted to avoid merge issues
     filtered_data_sorted['Cumulative_New_Deaths'] = filtered_data_sorted.groupby('country')['New_deaths'].cumsum()
 
     fig_cum_deaths, ax_cum_deaths = plt.subplots(figsize=(10, 6))
@@ -167,8 +189,6 @@ with col_add_ts1:
 
 with col_add_ts2:
     st.write("#### 7-Day Rolling Average of New Deaths")
-    # Calculate 7-day rolling average of New_deaths by country
-    # Assign directly to a new column in filtered_data_sorted
     filtered_data_sorted['Rolling_Avg_Deaths'] = filtered_data_sorted.groupby('country')['New_deaths'].transform(lambda x: x.rolling(window=7, min_periods=1).mean())
 
     fig_roll_deaths, ax_roll_deaths = plt.subplots(figsize=(10, 6))
@@ -408,7 +428,7 @@ st.write(
     -   **Model Persistence:** Efficiently saving and loading trained models with `joblib`.
     -   **Interactive Dashboard Development:** Creating a dynamic and user-friendly web application with `Streamlit`.
 
-    The dataset used for this project is "COVID vaccination vs. mortality" from Kaggle:
+    The dataset used for this project is **"COVID vaccination vs. mortality"** from Kaggle:
     [https://www.kaggle.com/datasets/sinakaraji/covid-vaccination-vs-mortality](https://www.kaggle.com/datasets/sinakaraji/covid-vaccination-vs-mortality)
 
     Context of the dataset: The COVID-19 pandemic has caused significant global mortality. This dataset was generated to
