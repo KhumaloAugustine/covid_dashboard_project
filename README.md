@@ -46,10 +46,9 @@ Follow these steps to get the dashboard running on your local machine:
 
 1.  **Clone the repository:**
     ```bash
-    git clone [https://github.com/YourGitHubUsername/covid_dashboard_project.git](https://github.com/YourGitHubUsername/covid_dashboard_project.git)
+    git clone [https://github.com/YourGitHubUsername/covid_dashboard_project.git](https://github.com/KhumaloAugustine/covid_dashboard_project.git)
     cd covid_dashboard_project
     ```
-    (Replace `YourGitHubUsername` with your actual GitHub username)
 
 2.  **Create a virtual environment (highly recommended):**
     ```bash
@@ -90,8 +89,7 @@ Follow these steps to get the dashboard running on your local machine:
 
 ## ✍️ Author
 
-* **Augustine (Your Name)** - [LinkedIn Profile](https://www.linkedin.com/in/your_linkedin_profile_url/)
-    (Please replace `Your Name` and `your_linkedin_profile_url` with your actual details.)
+* **Augustine Khumalo** - [LinkedIn Profile](https://www.linkedin.com/in/augustine-khumalo)
 
 ## 🤝 Contributing
 
