@@ -16,6 +16,7 @@ import matplotlib.pyplot as plt # For creating static plots
 import seaborn as sns # For enhanced data visualizations
 import numpy as np # For numerical operations (e.g., log transform inverse)
 import datetime # Import the datetime module
+import plotly.express as px # For interactive plotting, especially maps
 
 # --- 1. Dashboard Configuration and Title ---
 st.set_page_config(
@@ -162,11 +163,15 @@ if filtered_data.empty:
     st.warning("No data available for the selected filters. Please adjust your country and date range selections in the sidebar.")
     st.stop()
 
+# Display last updated date
+st.sidebar.markdown("---")
+st.sidebar.info(f"Data last updated: **{covid_data['date'].max().strftime('%Y-%m-%d')}**")
+
+
 # Reset Filters Button
 if st.sidebar.button("Reset Filters"):
     st.session_state.clear() # Clear all Streamlit session state
     st.rerun() # Use st.rerun() for newer Streamlit versions
-    st.experimental_rerun() # Rerun the app to apply default filters and refresh all components
 
 # Define default_days_since_start_date for prediction tab, accessible globally
 default_days_since_start_date_for_input = (max_date_data + pd.Timedelta(days=7)).date()
@@ -404,6 +409,36 @@ with tab1:
 
     st.markdown("---")
 
+    st.subheader("Top/Bottom Countries by Daily Deaths Growth Rate")
+    st.write(f"Identify countries with the highest and lowest average daily death growth rates.")
+    top_n_deaths_growth = st.slider("Select N for Top/Bottom Deaths Growth:", min_value=1, max_value=min(10, len(all_countries)), value=5, key='top_n_deaths_growth', help="Adjust 'N' to see more or fewer top/bottom countries by death growth rate.") 
+    with st.spinner(f"Calculating top/bottom {top_n_deaths_growth} countries..."):
+        avg_daily_deaths_growth = filtered_data.groupby('country')['daily_deaths_growth_rate'].mean().sort_values(ascending=False)
+        
+        col_top_bottom_growth1, col_top_bottom_growth2 = st.columns(2)
+        with col_top_bottom_growth1:
+            st.write(f"#### Top {top_n_deaths_growth} Countries by Average Daily Deaths Growth Rate")
+            st.dataframe(avg_daily_deaths_growth.head(top_n_deaths_growth).reset_index().rename(columns={'daily_deaths_growth_rate': 'Avg. Daily Deaths Growth Rate'}).set_index('country'))
+        with col_top_bottom_growth2:
+            st.write(f"#### Bottom {top_n_deaths_growth} Countries by Average Daily Deaths Growth Rate")
+            st.dataframe(avg_daily_deaths_growth.tail(top_n_deaths_growth).reset_index().rename(columns={'daily_deaths_growth_rate': 'Avg. Daily Deaths Growth Rate'}).set_index('country'))
+    st.markdown("---")
+
+    st.subheader("Top/Bottom Countries by Daily Vaccinations Growth Rate")
+    st.write(f"Identify countries with the highest and lowest average daily vaccinations growth rates.")
+    top_n_vacc_growth = st.slider("Select N for Top/Bottom Vaccinations Growth:", min_value=1, max_value=min(10, len(all_countries)), value=5, key='top_n_vacc_growth', help="Adjust 'N' to see more or fewer top/bottom countries by vaccination growth rate.") 
+    with st.spinner(f"Calculating top/bottom {top_n_vacc_growth} countries..."):
+        avg_daily_vacc_growth = filtered_data.groupby('country')['daily_vaccinations_growth_rate'].mean().sort_values(ascending=False)
+        
+        col_top_bottom_vacc_growth1, col_top_bottom_vacc_growth2 = st.columns(2)
+        with col_top_bottom_vacc_growth1:
+            st.write(f"#### Top {top_n_vacc_growth} Countries by Average Daily Vaccinations Growth Rate")
+            st.dataframe(avg_daily_vacc_growth.head(top_n_vacc_growth).reset_index().rename(columns={'daily_vaccinations_growth_rate': 'Avg. Daily Vaccinations Growth Rate'}).set_index('country'))
+        with col_top_bottom_vacc_growth2:
+            st.write(f"#### Bottom {top_n_vacc_growth} Countries by Average Daily Vaccinations Growth Rate")
+            st.dataframe(avg_daily_vacc_growth.tail(top_n_vacc_growth).reset_index().rename(columns={'daily_vaccinations_growth_rate': 'Avg. Daily Vaccinations Growth Rate'}).set_index('country'))
+    st.markdown("---")
+
     st.subheader("Data Dictionary / Column Explanations")
     st.write("Understand the meaning of each column in the dataset to better interpret the dashboard's insights.")
     st.markdown(
@@ -475,8 +510,34 @@ with tab2:
 
     st.markdown("---")
 
+    # 5.2.1 Vaccination Progress Over Time
+    st.subheader("5.2.1 Vaccination Progress Over Time")
+    st.write("Track the cumulative vaccination coverage and total vaccinations over time for the selected countries.")
+
+    vacc_progress_metric = st.selectbox(
+        "Select Vaccination Progress Metric:",
+        options=['vaccination_coverage', 'total_vaccinations_per_hundred'],
+        index=0,
+        key='vacc_progress_metric_select'
+    )
+
+    with st.spinner(f"Generating vaccination progress plot for {vacc_progress_metric.replace('_', ' ').title()}..."):
+        fig_vacc_progress, ax_vacc_progress = plt.subplots(figsize=(12, 6))
+        sns.lineplot(data=filtered_data, x='date', y=vacc_progress_metric, hue='country', marker='o', ax=ax_vacc_progress)
+        ax_vacc_progress.set_title(f'{vacc_progress_metric.replace("_", " ").title()} Over Time')
+        ax_vacc_progress.set_xlabel('Date')
+        ax_vacc_progress.set_ylabel(vacc_progress_metric.replace('_', ' ').title())
+        ax_vacc_progress.tick_params(axis='x', rotation=45)
+        if vacc_progress_metric == 'vaccination_coverage':
+            ax_vacc_progress.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.1%}'))
+        plt.tight_layout()
+        st.pyplot(fig_vacc_progress)
+        plt.close(fig_vacc_progress)
+    st.markdown("---")
+
+
     # --- Additional Time-Series Analysis (Cumulative & Rolling Averages) ---
-    st.subheader("5.2 Additional Time-Series Analysis: Cumulative & Rolling Averages")
+    st.subheader("5.2.2 Additional Time-Series Analysis: Cumulative & Rolling Averages")
     st.write("These plots provide a 'survival-like' perspective by showing cumulative totals and smoothed trends, which can help in understanding long-term impacts and underlying trends by reducing noise.")
 
     # Sort data by country and date to ensure correct cumulative sums and rolling averages
@@ -671,7 +732,7 @@ with tab2:
             st.pyplot(fig_comp)
             plt.close(fig_comp) # Close the figure
     else:
-        st.info("Select multiple countries in the sidebar to view comparative distribution plots (e.g., Violin Plots).")
+        st.info("Select multiple countries in the sidebar to view comparative distribution plots.")
     
     st.markdown("---")
 
@@ -878,6 +939,129 @@ with tab2:
             st.info("Not enough data to generate lag plot for the selected parameters. Try a smaller lag or wider date range.")
     st.markdown("---")
 
+    st.subheader("5.12 Daily Metrics Comparison for a Specific Date")
+    st.write("Select a specific date to compare daily deaths or daily vaccinations across your chosen countries using a bar chart.")
+
+    single_date_metric = st.selectbox(
+        "Select Daily Metric for Date Comparison:",
+        options=['New_deaths', 'daily_vaccinations'],
+        index=0,
+        key='single_date_metric_select'
+    )
+    
+    # Ensure the date picker respects the overall filtered data's min/max dates
+    single_comparison_date = st.date_input(
+        "Select Comparison Date:",
+        value=filtered_data['date'].max().date(), # Default to the latest date in filtered data
+        min_value=filtered_data['date'].min().date(),
+        max_value=filtered_data['date'].max().date(),
+        key='single_comparison_date_picker'
+    )
+
+    with st.spinner(f"Generating daily {single_date_metric.replace('_', ' ').lower()} comparison for {single_comparison_date}..."):
+        daily_comparison_data = filtered_data[filtered_data['date'].dt.date == single_comparison_date]
+        
+        if not daily_comparison_data.empty:
+            fig_daily_comp, ax_daily_comp = plt.subplots(figsize=(10, max(6, len(daily_comparison_data) * 0.5)))
+            sns.barplot(data=daily_comparison_data.sort_values(single_date_metric, ascending=False), 
+                        x=single_date_metric, y='country', hue='country', palette='viridis', legend=False, ax=ax_daily_comp)
+            ax_daily_comp.set_title(f'Daily {single_date_metric.replace("_", " ").title()} on {single_comparison_date.strftime("%Y-%m-%d")}')
+            ax_daily_comp.set_xlabel(single_date_metric.replace('_', ' ').title())
+            ax_daily_comp.set_ylabel('Country')
+            ax_daily_comp.ticklabel_format(style='plain', axis='x')
+            plt.tight_layout()
+            st.pyplot(fig_daily_comp)
+            plt.close(fig_daily_comp)
+        else:
+            st.info(f"No data available for {single_date_metric.replace('_', ' ').lower()} on {single_comparison_date.strftime('%Y-%m-%d')} for the selected countries.")
+    st.markdown("---")
+
+    st.subheader("5.13 Geographic Distribution of Key Metrics")
+    st.write("Visualize the spatial distribution of COVID-19 metrics on a world map. Select a metric to display its value across countries.")
+
+    # Prepare data for map: get the latest data point for each country in the full dataset
+    # And calculate cumulative sum for 'New_deaths'
+    map_base_data = covid_data.sort_values('date').groupby('iso_code').last().reset_index()
+    map_base_data = map_base_data[map_base_data['iso_code'].notna()] # Ensure ISO codes are present
+
+    # Calculate cumulative deaths for the map
+    cumulative_deaths_for_map = covid_data.groupby(['iso_code', 'country'])['New_deaths'].sum().reset_index()
+    cumulative_deaths_for_map.rename(columns={'New_deaths': 'Cumulative_New_Deaths'}, inplace=True)
+
+    # Merge cumulative deaths into the map_base_data
+    map_final_data = pd.merge(map_base_data, cumulative_deaths_for_map[['iso_code', 'Cumulative_New_Deaths']], on='iso_code', how='left')
+
+    # Define map metric options with the exact column names available in map_final_data
+    map_metric_options = {
+        'Cumulative New Deaths': 'Cumulative_New_Deaths',
+        'Latest Total Vaccinations': 'total_vaccinations',
+        'Latest Vaccination Coverage (%)': 'vaccination_coverage',
+        'Latest New Deaths per Million': 'new_deaths_per_million',
+        'Latest Daily Vaccinations': 'daily_vaccinations',
+        'Latest Population': 'population'
+    }
+    
+    selected_map_metric_display = st.selectbox(
+        "Select Metric for Map:",
+        options=list(map_metric_options.keys()),
+        index=0,
+        key='map_metric_select'
+    )
+    selected_map_metric_column = map_metric_options[selected_map_metric_display]
+
+    # Ensure selected metric column exists and fill NaNs
+    if selected_map_metric_column not in map_final_data.columns:
+        # Fallback for metrics that might not be in the initial 'last()' aggregation
+        # or for cumulative calculation not yet merged
+        if selected_map_metric_column == 'Cumulative_New_Deaths':
+            map_final_data[selected_map_metric_column] = cumulative_deaths_for_map['Cumulative_New_Deaths'].fillna(0)
+        else:
+            map_final_data[selected_map_metric_column] = map_final_data.get(selected_map_metric_column, 0).fillna(0) # Use .get with a default if column missing
+
+    # Apply percentage formatting if it's a coverage metric for display purposes
+    if selected_map_metric_column == 'vaccination_coverage':
+        map_final_data[selected_map_metric_column] = map_final_data[selected_map_metric_column] * 100 # Convert to percentage for display on map
+
+
+    with st.spinner(f"Generating map for {selected_map_metric_display}..."):
+        # Ensure 'iso_code' is present and valid for Plotly
+        if not map_final_data['iso_code'].empty:
+            fig_map = px.choropleth(
+                map_final_data,
+                locations="iso_code",
+                color=selected_map_metric_column,
+                hover_name="country",
+                # Update hover_data to use actual column names from map_final_data
+                hover_data={
+                    selected_map_metric_column: True, # Show selected metric
+                    'total_vaccinations': True, # Corresponds to 'Latest Total Vaccinations'
+                    'people_fully_vaccinated': True, # Corresponds to 'Latest People Fully Vaccinated'
+                    'vaccination_coverage': ':.2%', # Corresponds to 'Latest Vaccination Coverage (%)'
+                    'New_deaths': True, # Corresponds to 'Latest New Deaths' (latest daily deaths)
+                    'new_deaths_per_million': ':.2f', # Corresponds to 'Latest New Deaths per Million'
+                    'population': ':,', # Corresponds to 'Latest Population'
+                    'daily_vaccinations': True, # Corresponds to 'Latest Daily Vaccinations'
+                    'daily_vaccinated_per_million': ':.2f', # Corresponds to 'Latest Daily Vaccinated per Million'
+                    'Cumulative_New_Deaths': True # For the cumulative deaths metric
+                },
+                color_continuous_scale=px.colors.sequential.Plasma if 'Vaccination' in selected_map_metric_display else px.colors.sequential.Viridis,
+                title=f'{selected_map_metric_display} by Country',
+                template="plotly_dark" # Dark theme for better contrast
+            )
+            fig_map.update_geos(
+                showcoastlines=True, coastlinecolor="Black",
+                showland=True, landcolor="LightGrey",
+                showocean=True, oceancolor="LightBlue",
+                showlakes=True, lakecolor="LightBlue",
+                showrivers=True, rivercolor="LightBlue",
+                projection_type="natural earth" # Good general-purpose projection
+            )
+            fig_map.update_layout(height=600, margin={"r":0,"t":50,"l":0,"b":0}) # Adjust margins and height for better fit
+            st.plotly_chart(fig_map, use_container_width=True)
+        else:
+            st.info("No data available to render the map for the selected metric.")
+    st.markdown("---")
+
 
 with tab3:
     st.header("🔮 COVID-19 Prediction Tool")
@@ -1060,7 +1244,8 @@ with tab4:
             y_transformed_eval_temp = np.log1p(y_clean_eval_temp) # Apply log1p transformation
 
             # Align X and y after filtering and transformation
-            valid_indices_eval_temp = y_transformed_eval_temp.dropna().index
+            # Corrected typo from y_transformed_eval_eval to y_transformed_eval_temp
+            valid_indices_eval_temp = y_transformed_eval_temp.dropna().index 
             X_full_temp_eval = temp_covid_data_eval.loc[valid_indices_eval_temp, features_list_eval]
             y_filtered_transformed_eval_temp = y_transformed_eval_temp.loc[valid_indices_eval_temp]
 
@@ -1081,7 +1266,7 @@ with tab4:
                 st.info(f"Not enough clean data to perform robust evaluation for {model_insight_selector}. Try a wider date range or more countries.")
             else:
                 # Split data for evaluation (using a 80/20 train-test split, consistent with training script)
-                _, X_test_eval, _, y_test_transformed_eval = train_test_split(
+                X_train_eval, X_test_eval, y_train_transformed_eval, y_test_transformed_eval = train_test_split(
                     X_full_temp_eval, y_filtered_transformed_eval_temp, test_size=0.2, random_state=42
                 )
 
@@ -1089,7 +1274,9 @@ with tab4:
                 test_predictions = np.expm1(test_predictions_transformed) # Inverse transform predictions
                 test_predictions[test_predictions < 0] = 0 # Ensure non-negative predictions
 
-                y_test_original_scale = temp_covid_data_eval.loc[y_test_transformed_eval.index, target_col_eval] # Get original scale target values
+                # It's crucial to get the original scale y_test values directly from the DataFrame
+                # using the index of y_test_transformed_eval
+                y_test_original_scale = temp_covid_data_eval.loc[y_test_transformed_eval.index, target_col_eval]
 
                 # Calculate evaluation metrics
                 test_mse = mean_squared_error(y_test_original_scale, test_predictions)
