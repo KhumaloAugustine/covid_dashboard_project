@@ -1,9 +1,10 @@
 # covid_dashboard_app.py
 # This script creates an interactive Streamlit dashboard
 # for analyzing COVID-19 vaccination and mortality data,
-# and predicting new deaths using a trained regression model.
+# and predicting new deaths or daily vaccinations using trained regression models.
 # It now features a simplified tabbed interface and enhanced interactivity,
-# with a stronger focus on comparative analysis for multiple selected countries.
+# with a stronger focus on comparative analysis for multiple selected countries,
+# and improved user-friendliness across various devices.
 
 import streamlit as st
 import pandas as pd
@@ -16,8 +17,8 @@ import datetime # Import the datetime module
 # --- 1. Dashboard Configuration and Title ---
 st.set_page_config(
     page_title="COVID-19 Vaccination & Mortality Dashboard",
-    layout="wide", # Using wide layout for more space
-    initial_sidebar_state="auto"
+    layout="wide", # Using wide layout for more space, helps with responsiveness
+    initial_sidebar_state="auto" # Sidebar state adapts automatically
 )
 
 st.title("🦠 COVID-19 Vaccination & Mortality Dashboard")
@@ -26,88 +27,112 @@ st.markdown("---")
 # --- Initial User Guide / Getting Started ---
 st.info(
     """
-    **Welcome!** This interactive dashboard allows you to explore COVID-19 vaccination and mortality data.
+    **Welcome!** This interactive dashboard allows you to explore COVID-19 vaccination and mortality data from various countries.
     
     **To get started:**
-    1.  Use the **filters on the left sidebar** to select specific countries and a date range.
-    2.  Navigate through the **tabs below** to view data overviews, trends, predictions, and model insights.
+    1.  Use the **filters on the left sidebar** to select specific countries and a date range relevant to your analysis.
+    2.  Navigate through the **tabs below** to view detailed data overviews, interactive trends and insights, prediction models, and information about the models used.
+    
+    This dashboard is designed to be user-friendly and responsive across different devices, including mobile phones, tablets, and laptops.
     """
 )
 st.markdown("---")
 
 
-# --- 2. Load Data and Pre-trained Model ---
-@st.cache_data
+# --- 2. Load Data and Pre-trained Models ---
+@st.cache_data # Cache data to prevent reloading on every rerun, improving performance
 def load_data():
     """Loads the COVID-19 dataset and performs initial preprocessing."""
-    with st.spinner("Loading and preprocessing data..."):
+    with st.spinner("Loading and preparing data... This may take a moment."):
         try:
             data = pd.read_csv('covid_vaccination_mortality.csv', index_col=0)
             data['date'] = pd.to_datetime(data['date'])
 
             # Fill NaNs with 0 for relevant numerical columns
+            # This ensures calculations are not impacted by missing data, assuming 0 for missing counts.
             numerical_cols_to_fill_zero = [
                 'total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated', 'New_deaths', 'ratio'
             ]
             for col in numerical_cols_to_fill_zero:
                 data[col] = data[col].fillna(0)
 
-            # Ensure population is numeric and handle potential zeros/Na
+            # Ensure population is numeric and handle potential zeros/NaNs
+            # Rows with missing or zero population are crucial for per-capita calculations and are dropped.
             data['population'] = pd.to_numeric(data['population'], errors='coerce')
             data.dropna(subset=['population'], inplace=True)
-            data = data[data['population'] > 0] # Filter out zero population entries
+            data = data[data['population'] > 0] # Filter out entries with zero population
 
-            # Feature Engineering (same as in training script)
+            # Feature Engineering: Create new, more insightful metrics
             data['vaccination_coverage'] = data['people_fully_vaccinated'] / data['population']
             data['vaccination_coverage'].fillna(0, inplace=True) # Handle division by zero or NaNs
 
-            # New per-capita metrics
             data['new_deaths_per_million'] = (data['New_deaths'] / data['population']) * 1_000_000
             data['total_vaccinations_per_hundred'] = (data['total_vaccinations'] / data['population']) * 100
             
             # Calculate daily vaccinations (difference from previous day's total_vaccinations)
+            # Sorting by country and date is essential for correct difference calculation across groups.
+            data = data.sort_values(by=['country', 'date']) 
             data['daily_vaccinations'] = data.groupby('country')['total_vaccinations'].diff().fillna(0)
+            data['daily_vaccinations'] = data['daily_vaccinations'].apply(lambda x: max(0, x)) # Ensure non-negative daily counts
+            
             data['daily_vaccinated_per_million'] = (data['daily_vaccinations'] / data['population']) * 1_000_000
-            data['daily_vaccinated_per_million'].fillna(0, inplace=True)
+            data['daily_vaccinated_per_million'].fillna(0, inplace=True) # Fill NaNs for consistency
 
+            # Growth Rates (percentage change) for daily metrics
+            # A small epsilon is added to the denominator for robustness against division by zero in pct_change.
+            data['daily_deaths_growth_rate'] = data.groupby('country')['New_deaths'].pct_change().replace([np.inf, -np.inf], np.nan)
+            data['daily_deaths_growth_rate'].fillna(0, inplace=True) 
 
-            # Replace NaNs in new per-capita metrics with 0 (e.g., if population was 0, though handled by filter)
-            data['new_deaths_per_million'].fillna(0, inplace=True)
-            data['total_vaccinations_per_hundred'].fillna(0, inplace=True)
+            data['daily_vaccinations_growth_rate'] = data.groupby('country')['daily_vaccinations'].pct_change().replace([np.inf, -np.inf], np.nan)
+            data['daily_vaccinations_growth_rate'].fillna(0, inplace=True)
+
 
             min_date = data['date'].min()
             data['days_since_start'] = (data['date'] - min_date).dt.days
 
             return data
         except FileNotFoundError:
-            st.error("Error: 'covid_vaccination_mortality.csv' not found. Please ensure it's in the same directory.")
-            st.stop()
+            st.error("Error: 'covid_vaccination_mortality.csv' not found. Please ensure it's in the same directory as the script.")
+            st.stop() # Stop the app if data is not found
 
 covid_data = load_data()
 
-# Load the trained model and features used for training
-with st.spinner("Loading machine learning model..."):
-    try:
-        model = joblib.load('trained_covid_model.pkl')
-        model_features = joblib.load('model_features.pkl')
-        st.sidebar.success("Model and data loaded successfully!")
-    except FileNotFoundError:
-        st.error("Error: 'trained_covid_model.pkl' or 'model_features.pkl' not found. Please run 'train_covid_model.py' first.")
-        st.stop()
+# Load the trained models and their features
+@st.cache_resource # Cache models to avoid reloading on every rerun, crucial for performance
+def load_models():
+    models = {}
+    features = {}
+    with st.spinner("Loading machine learning models..."):
+        try:
+            models['deaths'] = joblib.load('trained_deaths_model.pkl')
+            features['deaths'] = joblib.load('model_features_deaths.pkl')
+            st.sidebar.success("Deaths prediction model loaded successfully!")
+        except FileNotFoundError:
+            st.sidebar.error("Error: 'trained_deaths_model.pkl' or 'model_features_deaths.pkl' not found. Please run 'train_covid_model.py' first to generate these files.")
+            st.stop()
+        
+        try:
+            models['vaccinations'] = joblib.load('trained_vaccinations_model.pkl')
+            features['vaccinations'] = joblib.load('model_features_vaccinations.pkl')
+            st.sidebar.success("Daily vaccinations prediction model loaded successfully!")
+        except FileNotFoundError:
+            st.sidebar.warning("Warning: 'trained_vaccinations_model.pkl' or 'model_features_vaccinations.pkl' not found. Daily vaccinations prediction will not be available. Please run 'train_covid_model.py'.")
+            models['vaccinations'] = None # Set to None if not found
+            features['vaccinations'] = None
+    return models, features
 
-# --- 3. Dashboard Introduction (This content is now moved to the initial info block) ---
-# st.write(...)
+models, model_features_dict = load_models()
 
 # --- 4. Interactive Data Filtering (Sidebar) ---
 st.sidebar.header("📊 Global Data Filters")
-st.sidebar.write("Use these filters to customize the data displayed in the main sections.")
+st.sidebar.write("Use these filters to customize the data displayed in the main sections of the dashboard.")
 
-# Country selection
+# Country selection multiselect
 all_countries = covid_data['country'].unique().tolist()
 selected_countries = st.sidebar.multiselect(
     "Select Country(ies):",
     options=all_countries,
-    default=['Afghanistan'] # Default to a few countries for demonstration
+    default=['United States', 'India', 'Brazil'] if 'United States' in all_countries else all_countries[:3] # Sensible defaults
 )
 
 # Date Range Slider
@@ -117,83 +142,105 @@ date_range = st.sidebar.slider(
     "Select Date Range:",
     min_value=min_date_data,
     max_value=max_date_data,
-    value=(min_date_data, max_date_data),
-    format="YYYY-MM-DD"
+    value=(min_date_data, max_date_data), # Default to full range
+    format="YYYY-MM-DD",
+    help="Drag the ends of the slider to select a specific period, or click to adjust."
 )
 
-# Apply filters
+# Apply filters to the data
 filtered_data = covid_data[
     covid_data['country'].isin(selected_countries) &
     (covid_data['date'] >= date_range[0]) &
     (covid_data['date'] <= date_range[1])
-].copy() # Use .copy() to avoid SettingWithCopyWarning
+].copy() # Use .copy() to avoid SettingWithCopyWarning, important for modifying filtered_data later
 
+# Check if filtered data is empty and stop execution if so
 if filtered_data.empty:
-    st.warning("No data available for the selected filters. Please adjust your selections.")
-    st.stop() # Stop execution if no data to display
+    st.warning("No data available for the selected filters. Please adjust your country and date range selections in the sidebar.")
+    st.stop()
 
 # Reset Filters Button
 if st.sidebar.button("Reset Filters"):
-    st.session_state.clear()
-    st.experimental_rerun() # Rerun the app to apply default filters
+    st.session_state.clear() # Clear all Streamlit session state
+    st.experimental_rerun() # Rerun the app to apply default filters and refresh all components
+
+# Define default_days_since_start_date for prediction tab, accessible globally
+default_days_since_start_date_for_input = (max_date_data + pd.Timedelta(days=7)).date()
+
 
 # --- Main Content Tabs ---
+# Using tabs helps organize content and keeps the interface clean.
 tab1, tab2, tab3, tab4 = st.tabs(["📊 Data Overview", "📈 Trends & Insights", "🔮 Prediction", "⚙️ Model & About"])
 
 with tab1:
-    st.header("📊 Data Overview & Statistics")
-    st.write(f"Showing raw data and key statistics for **{', '.join(selected_countries)}** from **{date_range[0].strftime('%Y-%m-%d')}** to **{date_range[1].strftime('%Y-%m-%d')}**.")
+    st.header("📊 Data Overview & Key Statistics")
+    st.write(f"Explore the raw data and key aggregated statistics for **{', '.join(selected_countries)}** from **{date_range[0].strftime('%Y-%m-%d')}** to **{date_range[1].strftime('%Y-%m-%d')}**.")
 
-    st.subheader("Summary Metrics for Filtered Data")
+    st.subheader("Summary Metrics for Selected Data")
+    # Using multiple columns for metrics to save space and improve layout on wider screens
     col_metrics1, col_metrics2, col_metrics3, col_metrics4, col_metrics5, col_metrics6 = st.columns(6) 
     with col_metrics1:
-        st.metric(label="Total New Deaths (Selected Period)",
-                  value=f"{int(filtered_data['New_deaths'].sum()):,}")
+        st.metric(label="Total New Deaths",
+                  value=f"{int(filtered_data['New_deaths'].sum()):,}",
+                  help="Sum of new deaths recorded for the selected countries over the chosen period.")
     with col_metrics2:
-        st.metric(label="Max Total Vaccinations (Selected Period)",
-                  value=f"{int(filtered_data['total_vaccinations'].max()):,}")
+        st.metric(label="Max Total Vaccinations",
+                  value=f"{int(filtered_data['total_vaccinations'].max()):,}",
+                  help="Highest recorded total vaccinations across selected countries in the period.")
     with col_metrics3:
         st.metric(label="Average Vaccination Coverage",
-                  value=f"{filtered_data['vaccination_coverage'].mean():.2%}")
+                  value=f"{filtered_data['vaccination_coverage'].mean():.2%}",
+                  help="Average of 'people fully vaccinated' divided by 'population' for all data points in the selection.")
     with col_metrics4:
-        st.metric(label="Unique Countries Selected",
-                  value=f"{len(selected_countries)}")
+        st.metric(label="Selected Countries",
+                  value=f"{len(selected_countries)}",
+                  help="Number of unique countries currently selected in the sidebar filter.")
     with col_metrics5:
         st.metric(label="Overall Avg Daily Deaths",
-                  value=f"{filtered_data['New_deaths'].mean():,.2f}")
+                  value=f"{filtered_data['New_deaths'].mean():,.2f}",
+                  help="Average daily new deaths across all selected countries and dates.")
     with col_metrics6:
         st.metric(label="Overall Avg Deaths per Million",
-                  value=f"{filtered_data['new_deaths_per_million'].mean():,.2f}")
+                  value=f"{filtered_data['new_deaths_per_million'].mean():,.2f}",
+                  help="Average daily new deaths per million people.")
     
-    col_metrics_new1, col_metrics_new2, col_metrics_new3, col_metrics_new4 = st.columns(4) # Added a new column for avg daily vaccinated per million
+    # Additional key metrics for a more comprehensive overview
+    col_metrics_new1, col_metrics_new2, col_metrics_new3, col_metrics_new4 = st.columns(4) 
     with col_metrics_new1:
         st.metric(label="Overall Max Daily Deaths",
-                  value=f"{int(filtered_data['New_deaths'].max()):,}")
+                  value=f"{int(filtered_data['New_deaths'].max()):,}",
+                  help="Highest number of new deaths recorded on any single day within the selected data.")
     with col_metrics_new2:
         st.metric(label="Overall Max Daily Vaccinations",
-                  value=f"{int(filtered_data['daily_vaccinations'].max()):,}") # Changed to daily_vaccinations
+                  value=f"{int(filtered_data['daily_vaccinations'].max()):,}",
+                  help="Highest number of daily vaccinations recorded on any single day within the selected data.") 
     with col_metrics_new3:
         st.metric(label="Overall Average Daily Vaccinations",
-                  value=f"{filtered_data['daily_vaccinations'].mean():,.0f}") # Changed to daily_vaccinations mean
+                  value=f"{filtered_data['daily_vaccinations'].mean():,.0f}",
+                  help="Average daily vaccinations across all selected countries and dates.") 
     with col_metrics_new4:
         st.metric(label="Overall Avg Daily Vaccinated per Million",
-                  value=f"{filtered_data['daily_vaccinated_per_million'].mean():,.2f}")
+                  value=f"{filtered_data['daily_vaccinated_per_million'].mean():,.2f}",
+                  help="Average daily vaccinations per million people.")
 
     st.markdown("---")
 
     st.subheader("Raw Filtered Data Sample")
+    st.write("A glimpse into the raw data based on your current filters.")
     with st.spinner("Loading raw data sample..."):
-        st.dataframe(filtered_data.head())
-        st.caption(f"Displaying the first 5 rows of {len(filtered_data)} entries. This sample reflects **all active filters** (country and date range).")
+        st.dataframe(filtered_data.head(10)) # Display slightly more rows by default
+        st.caption(f"Displaying the first 10 rows of {len(filtered_data)} entries. This sample reflects **all active filters** (country and date range).")
 
     st.subheader("Summary Statistics for Numerical Data")
+    st.write("Descriptive statistics (count, mean, std, min, max, quartiles) for all numerical columns in your filtered dataset.")
     with st.spinner("Calculating summary statistics..."):
         st.dataframe(filtered_data.describe().transpose()) # Transpose for better readability
-        st.caption("Descriptive statistics for numerical columns in the filtered dataset.")
+        st.caption("These statistics provide a quick overview of the central tendency, dispersion, and shape of the numerical features.")
 
-    # --- Country Comparison Table ---
+    # --- Country Comparison Table (only shown if multiple countries are selected) ---
     if len(selected_countries) > 1:
         st.subheader("Country Comparison: Key Aggregated Metrics")
+        st.write("Compare aggregated metrics across your selected countries for the chosen date range.")
         with st.spinner("Generating country comparison table..."):
             comparison_table = filtered_data.groupby('country').agg(
                 Total_New_Deaths=('New_deaths', 'sum'),
@@ -203,10 +250,10 @@ with tab1:
                 Max_Population=('population', 'max'),
                 Avg_New_Deaths_Per_Million=('new_deaths_per_million', 'mean'), 
                 Max_Total_Vaccinations_Per_Hundred=('total_vaccinations_per_hundred', 'max'),
-                Avg_Daily_Vaccinations=('daily_vaccinations', 'mean'), # Added
-                Avg_Daily_Vaccinated_Per_Million=('daily_vaccinated_per_million', 'mean') # Added
+                Avg_Daily_Vaccinations=('daily_vaccinations', 'mean'), 
+                Avg_Daily_Vaccinated_Per_Million=('daily_vaccinated_per_million', 'mean') 
             ).reset_index()
-            # Format columns for better readability
+            # Format columns for better readability with commas and percentages
             comparison_table['Total_New_Deaths'] = comparison_table['Total_New_Deaths'].apply(lambda x: f"{int(x):,}")
             comparison_table['Max_Total_Vaccinations'] = comparison_table['Max_Total_Vaccinations'].apply(lambda x: f"{int(x):,}")
             comparison_table['Avg_Daily_New_Deaths'] = comparison_table['Avg_Daily_New_Deaths'].apply(lambda x: f"{x:.2f}")
@@ -214,20 +261,20 @@ with tab1:
             comparison_table['Max_Population'] = comparison_table['Max_Population'].apply(lambda x: f"{int(x):,}")
             comparison_table['Avg_New_Deaths_Per_Million'] = comparison_table['Avg_New_Deaths_Per_Million'].apply(lambda x: f"{x:.2f}")
             comparison_table['Max_Total_Vaccinations_Per_Hundred'] = comparison_table['Max_Total_Vaccinations_Per_Hundred'].apply(lambda x: f"{x:.2f}")
-            comparison_table['Avg_Daily_Vaccinations'] = comparison_table['Avg_Daily_Vaccinations'].apply(lambda x: f"{int(x):,}") # Format
-            comparison_table['Avg_Daily_Vaccinated_Per_Million'] = comparison_table['Avg_Daily_Vaccinated_Per_Million'].apply(lambda x: f"{x:.2f}") # Format
+            comparison_table['Avg_Daily_Vaccinations'] = comparison_table['Avg_Daily_Vaccinations'].apply(lambda x: f"{int(x):,}") 
+            comparison_table['Avg_Daily_Vaccinated_Per_Million'] = comparison_table['Avg_Daily_Vaccinated_Per_Million'].apply(lambda x: f"{x:.2f}") 
             
             st.dataframe(comparison_table.set_index('country'))
             st.caption("Aggregated statistics for each selected country over the chosen period. 'Max' values represent the highest recorded within the period.")
     else:
-        st.info("Select multiple countries in the sidebar to view a comparative summary table.")
+        st.info("Select multiple countries in the sidebar to view a comparative summary table and plots.")
 
     st.markdown("---")
 
     st.subheader("Key Statistics per Country (Latest Data Point)")
+    st.write("View the most recent available data points for key metrics for each selected country within your chosen date range.")
     with st.spinner("Calculating latest country statistics..."):
         # Get the latest data point for each country within the filtered range
-        # Ensure data is sorted by date within each country to get the true 'last' record
         filtered_data_sorted_latest = filtered_data.sort_values(by=['country', 'date'])
 
         latest_country_stats = filtered_data_sorted_latest.groupby('country').agg(
@@ -238,28 +285,28 @@ with tab1:
             Latest_New_Deaths=('New_deaths', 'last'), 
             Latest_New_Deaths_Per_Million=('new_deaths_per_million', 'last'), 
             Latest_Total_Vaccinations_Per_Hundred=('total_vaccinations_per_hundred', 'last'),
-            Latest_Daily_Vaccinations=('daily_vaccinations', 'last'), # Added
-            Latest_Daily_Vaccinated_Per_Million=('daily_vaccinated_per_million', 'last') # Added
+            Latest_Daily_Vaccinations=('daily_vaccinations', 'last'), 
+            Latest_Daily_Vaccinated_Per_Million=('daily_vaccinated_per_million', 'last') 
         ).reset_index()
 
 
         st.dataframe(latest_country_stats.set_index('country'))
-        st.caption("Shows the latest recorded values for relevant metrics within the selected date range for each country.")
+        st.caption("Shows the latest recorded values for relevant metrics within the selected date range for each country. If a country had no data in the range, it will not appear.")
 
     st.subheader("Total Deaths and Vaccinations for Selected Period (Bar Plots)")
+    st.write("Visualizations showing total new deaths, highest total vaccinations reached, and average daily vaccinations for each selected country over the chosen period.")
     with st.spinner("Generating bar plots for totals..."):
         period_summary = filtered_data.groupby('country').agg(
             Total_New_Deaths=('New_deaths', 'sum'),
             Highest_Total_Vaccinations_Reached=('total_vaccinations', 'max'),
             Latest_Vaccination_Coverage=('vaccination_coverage', 'max'),
             Avg_New_Deaths_Per_Million=('new_deaths_per_million', 'mean'), 
-            Avg_Daily_Vaccinations=('daily_vaccinations', 'mean') # Added
+            Avg_Daily_Vaccinations=('daily_vaccinations', 'mean') 
         ).reset_index()
         
         col_bar1, col_bar2 = st.columns(2)
 
         with col_bar1:
-            # Bar plot for Total New Deaths per country
             fig_total_deaths, ax_total_deaths = plt.subplots(figsize=(10, max(6, len(period_summary) * 0.5))) # Dynamic height
             sns.barplot(data=period_summary.sort_values('Total_New_Deaths', ascending=False), x='Total_New_Deaths', y='country', palette='viridis', ax=ax_total_deaths)
             ax_total_deaths.set_title('Total New Deaths per Country (Selected Period)')
@@ -270,7 +317,6 @@ with tab1:
             st.pyplot(fig_total_deaths)
         
         with col_bar2:
-            # Bar plot for Highest Total Vaccinations Reached per country
             fig_total_vacc, ax_total_vacc = plt.subplots(figsize=(10, max(6, len(period_summary) * 0.5))) # Dynamic height
             sns.barplot(data=period_summary.sort_values('Highest_Total_Vaccinations_Reached', ascending=False), x='Highest_Total_Vaccinations_Reached', y='country', palette='cividis', ax=ax_total_vacc)
             ax_total_vacc.set_title('Highest Total Vaccinations Reached per Country')
@@ -288,8 +334,7 @@ with tab1:
         ax_vacc_coverage_bar.set_xlabel('Latest Vaccination Coverage (%)')
         ax_vacc_coverage_bar.set_ylabel('Country')
         ax_vacc_coverage_bar.ticklabel_format(style='plain', axis='x')
-        # Format x-axis as percentage
-        ax_vacc_coverage_bar.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1%}'))
+        ax_vacc_coverage_bar.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1%}')) # Format x-axis as percentage
         plt.tight_layout()
         st.pyplot(fig_vacc_coverage_bar)
 
@@ -319,7 +364,8 @@ with tab1:
     st.markdown("---")
 
     st.subheader("Top/Bottom Countries by Average Daily Deaths")
-    top_n_countries = st.slider("Select N for Top/Bottom Countries:", min_value=1, max_value=min(10, len(all_countries)), value=5, key='top_n_countries_tab1') 
+    st.write(f"Easily identify countries with the highest and lowest average daily new deaths within your selected timeframe.")
+    top_n_countries = st.slider("Select N for Top/Bottom Countries:", min_value=1, max_value=min(10, len(all_countries)), value=5, key='top_n_countries_tab1', help="Adjust 'N' to see more or fewer top/bottom countries.") 
     with st.spinner(f"Calculating top/bottom {top_n_countries} countries..."):
         avg_daily_deaths = filtered_data.groupby('country')['New_deaths'].mean().sort_values(ascending=False)
         
@@ -333,8 +379,9 @@ with tab1:
 
     st.markdown("---")
     
-    st.subheader("Top/Bottom Countries by Total Vaccinations") # New section
-    top_n_vacc_countries = st.slider("Select N for Top/Bottom Vaccinated Countries:", min_value=1, max_value=min(10, len(all_countries)), value=5, key='top_n_vacc_countries_tab1')
+    st.subheader("Top/Bottom Countries by Total Vaccinations") 
+    st.write(f"See which countries have administered the most or fewest total vaccinations within your selected timeframe.")
+    top_n_vacc_countries = st.slider("Select N for Top/Bottom Vaccinated Countries:", min_value=1, max_value=min(10, len(all_countries)), value=5, key='top_n_vacc_countries_tab1', help="Adjust 'N' to see more or fewer top/bottom vaccinated countries.")
     with st.spinner(f"Calculating top/bottom {top_n_vacc_countries} vaccinated countries..."):
         total_vacc_by_country = filtered_data.groupby('country')['total_vaccinations'].max().sort_values(ascending=False)
         
@@ -349,24 +396,26 @@ with tab1:
     st.markdown("---")
 
     st.subheader("Data Dictionary / Column Explanations")
+    st.write("Understand the meaning of each column in the dataset to better interpret the dashboard's insights.")
     st.markdown(
         """
-        Here's a brief explanation of the key columns in this dataset:
-        * **country:** Name of the country.
-        * **iso_code:** ISO 3166-1 alpha-3 code for each country.
-        * **date:** The date to which the data entry belongs.
-        * **total_vaccinations:** Total number of COVID vaccine doses administered in that country.
-        * **people_vaccinated:** Number of people who received at least one dose of a COVID vaccine.
-        * **people_fully_vaccinated:** Number of people who received all doses required for full vaccination.
-        * **New_deaths:** Number of daily new deaths due to COVID-19.
-        * **population:** The 2021 country population.
-        * **ratio:** Percentage of vaccinations in that country at that date = (people_vaccinated / population) * 100.
-        * **vaccination_coverage:** Calculated as (people_fully_vaccinated / population). This is a float between 0 and 1.
-        * **new_deaths_per_million:** New deaths per 1,000,000 people (New_deaths / population) * 1,000_000.
-        * **total_vaccinations_per_hundred:** Total vaccinations per 100 people (total_vaccinations / population) * 100.
-        * **daily_vaccinations:** Number of new vaccinations administered each day.
-        * **daily_vaccinated_per_million:** New vaccinations per 1,000,000 people.
-        * **days_since_start:** Number of days passed since the earliest date in the dataset.
+        * **country:** The geographical entity to which the data corresponds.
+        * **iso_code:** International Organization for Standardization 3166-1 alpha-3 code for each country.
+        * **date:** The specific date for which the data entry is recorded.
+        * **total_vaccinations:** The cumulative number of COVID-19 vaccine doses administered up to that date in the country.
+        * **people_vaccinated:** The cumulative number of individuals who have received at least one dose of a COVID-19 vaccine.
+        * **people_fully_vaccinated:** The cumulative number of individuals who have completed their full vaccination course.
+        * **New_deaths:** The number of new deaths attributed to COVID-19 reported on that specific day.
+        * **population:** The estimated population of the country in 2021, used for per-capita calculations.
+        * **ratio:** Calculated as the percentage of the population that has received at least one vaccination dose: `(people_vaccinated / population) * 100`.
+        * **vaccination_coverage:** Calculated as the proportion of the population that is fully vaccinated: `(people_fully_vaccinated / population)`. This is a value between 0 and 1.
+        * **new_deaths_per_million:** The number of new deaths per 1,000,000 people: `(New_deaths / population) * 1,000,000`. This normalizes death counts by population size.
+        * **total_vaccinations_per_hundred:** Total vaccinations administered per 100 people: `(total_vaccinations / population) * 100`.
+        * **daily_vaccinations:** The number of new vaccine doses administered on a given day. This is derived from the daily change in `total_vaccinations`.
+        * **daily_vaccinated_per_million:** The number of new vaccine doses administered per 1,000,000 people on a given day.
+        * **daily_deaths_growth_rate:** The daily percentage change in the number of new deaths. Helps understand the acceleration or deceleration of deaths.
+        * **daily_vaccinations_growth_rate:** The daily percentage change in the number of daily vaccinations. Helps understand the pace of vaccination efforts.
+        * **days_since_start:** The number of days that have passed since the earliest date in the entire dataset, used for time-series modeling.
         """
     )
     st.markdown("---")
@@ -374,49 +423,51 @@ with tab1:
 
 with tab2:
     st.header("📈 Dynamic COVID-19 Trends & Insights")
-    st.write("These visualizations update automatically based on the filters applied in the 'Data Overview' tab.")
+    st.write("Visualize how key COVID-19 metrics have evolved over time and explore relationships between them. All plots automatically update based on your country and date selections from the 'Data Overview' tab.")
 
-    # 5.1 Time Series Plots - Now with selectable metric and plot type
+    # 5.1 Time Series Plots - Customizable Metric and Plot Type
     st.subheader("5.1 Customizable Time Series Trends")
+    st.write("Select a metric and a plot type to see its trend over your chosen date range. This helps identify peaks, valleys, and overall patterns.")
     col_ts_sel1, col_ts_sel2 = st.columns(2)
     with col_ts_sel1:
         time_series_metric = st.selectbox(
             "Select Metric to Plot Over Time:",
             options=['New_deaths', 'new_deaths_per_million', 'total_vaccinations', 'total_vaccinations_per_hundred', 'daily_vaccinations', 'daily_vaccinated_per_million', 'people_vaccinated', 'people_fully_vaccinated', 'vaccination_coverage'],
-            index=0, 
-            key='ts_metric_select'
+            index=0, # Default to New Deaths
+            key='ts_metric_select',
+            help="Choose a metric to display its historical trend for the selected countries."
         )
     with col_ts_sel2:
-        plot_type = st.radio("Select Plot Type:", ('Line Plot', 'Area Plot', 'Bar Plot'), key='ts_plot_type')
+        plot_type = st.radio("Select Plot Type:", ('Line Plot', 'Area Plot', 'Bar Plot'), key='ts_plot_type', help="Line plots show continuous trends, Area plots highlight magnitude, Bar plots show discrete values.")
     
     with st.spinner(f"Generating time series plot for {time_series_metric.replace('_', ' ').title()}..."):
-        fig_ts, ax_ts = plt.subplots(figsize=(12, 6))
-        
+        fig_ts, ax_ts = plt.subplots(figsize=(12, 6)) # Fixed figure size for consistency
+
         if plot_type == 'Line Plot':
             sns.lineplot(data=filtered_data, x='date', y=time_series_metric, hue='country', marker='o', ax=ax_ts)
         elif plot_type == 'Area Plot':
-            # For area plot, fill between a baseline (0) and the metric
             sns.lineplot(data=filtered_data, x='date', y=time_series_metric, hue='country', ax=ax_ts)
             for country in filtered_data['country'].unique():
                 country_data = filtered_data[filtered_data['country'] == country].sort_values('date')
                 ax_ts.fill_between(country_data['date'], country_data[time_series_metric], alpha=0.3)
         else: # Bar Plot
             sns.barplot(data=filtered_data, x='date', y=time_series_metric, hue='country', dodge=True, ax=ax_ts)
+            # Dynamically adjust x-tick frequency for readability on bar plots with many dates
             ax_ts.set_xticks(ax_ts.get_xticks()[::max(1, len(filtered_data['date'].unique()) // 10)]) 
 
         ax_ts.set_title(f'{time_series_metric.replace("_", " ").title()} Over Time')
         ax_ts.set_xlabel('Date')
         ax_ts.set_ylabel(time_series_metric.replace('_', ' ').title())
-        ax_ts.tick_params(axis='x', rotation=45)
-        ax_ts.ticklabel_format(style='plain', axis='y')
-        plt.tight_layout()
+        ax_ts.tick_params(axis='x', rotation=45) # Rotate date labels for better readability
+        ax_ts.ticklabel_format(style='plain', axis='y') # Prevent scientific notation on Y-axis
+        plt.tight_layout() # Adjust layout to prevent labels from overlapping
         st.pyplot(fig_ts)
 
     st.markdown("---")
 
     # --- Additional Time-Series Analysis (Cumulative & Rolling Averages) ---
     st.subheader("5.2 Additional Time-Series Analysis: Cumulative & Rolling Averages")
-    st.write("These plots provide a 'survival-like' perspective by showing cumulative totals and smoothed trends.")
+    st.write("These plots provide a 'survival-like' perspective by showing cumulative totals and smoothed trends, which can help in understanding long-term impacts and underlying trends by reducing noise.")
 
     # Sort data by country and date to ensure correct cumulative sums and rolling averages
     filtered_data_sorted = filtered_data.sort_values(by=['country', 'date'])
@@ -434,13 +485,14 @@ with tab2:
             ax_cum_deaths.set_xlabel('Date')
             ax_cum_deaths.set_ylabel('Cumulative New Deaths')
             ax_cum_deaths.tick_params(axis='x', rotation=45)
-            ax_cum_deaths.ticklabel_format(style='plain', axis='y') # Prevent scientific notation
+            ax_cum_deaths.ticklabel_format(style='plain', axis='y') 
             plt.tight_layout()
             st.pyplot(fig_cum_deaths)
 
     with col_add_ts2:
         st.write("#### 7-Day Rolling Average of New Deaths")
         with st.spinner("Calculating rolling average deaths..."):
+            # Rolling average helps smooth out daily fluctuations and reveal underlying trends.
             filtered_data_sorted['Rolling_Avg_Deaths'] = filtered_data_sorted.groupby('country')['New_deaths'].transform(lambda x: x.rolling(window=7, min_periods=1).mean())
 
             fig_roll_deaths, ax_roll_deaths = plt.subplots(figsize=(10, 6))
@@ -451,11 +503,42 @@ with tab2:
             ax_roll_deaths.tick_params(axis='x', rotation=45)
             plt.tight_layout()
             st.pyplot(fig_roll_deaths)
+    
+    col_add_ts3, col_add_ts4 = st.columns(2)
+    with col_add_ts3:
+        st.write("#### Cumulative Daily Vaccinations Over Time")
+        with st.spinner("Calculating cumulative vaccinations..."):
+            filtered_data_sorted['Cumulative_Daily_Vaccinations'] = filtered_data_sorted.groupby('country')['daily_vaccinations'].cumsum()
+
+            fig_cum_vacc, ax_cum_vacc = plt.subplots(figsize=(10, 6))
+            sns.lineplot(data=filtered_data_sorted, x='date', y='Cumulative_Daily_Vaccinations', hue='country', marker='o', ax=ax_cum_vacc)
+            ax_cum_vacc.set_title('Cumulative Daily Vaccinations Over Time')
+            ax_cum_vacc.set_xlabel('Date')
+            ax_cum_vacc.set_ylabel('Cumulative Daily Vaccinations')
+            ax_cum_vacc.tick_params(axis='x', rotation=45)
+            ax_cum_vacc.ticklabel_format(style='plain', axis='y')
+            plt.tight_layout()
+            st.pyplot(fig_cum_vacc)
+
+    with col_add_ts4:
+        st.write("#### 7-Day Rolling Average of Daily Vaccinations")
+        with st.spinner("Calculating rolling average vaccinations..."):
+            filtered_data_sorted['Rolling_Avg_Daily_Vaccinations'] = filtered_data_sorted.groupby('country')['daily_vaccinations'].transform(lambda x: x.rolling(window=7, min_periods=1).mean())
+
+            fig_roll_vacc, ax_roll_vacc = plt.subplots(figsize=(10, 6))
+            sns.lineplot(data=filtered_data_sorted, x='date', y='Rolling_Avg_Daily_Vaccinations', hue='country', marker='o', ax=ax_roll_vacc)
+            ax_roll_vacc.set_title('7-Day Rolling Average of Daily Vaccinations')
+            ax_roll_vacc.set_xlabel('Date')
+            ax_roll_vacc.set_ylabel('Avg. Daily Vaccinations (Past 7 Days)')
+            ax_roll_vacc.tick_params(axis='x', rotation=45)
+            plt.tight_layout()
+            st.pyplot(fig_roll_vacc)
 
     st.markdown("---")
 
     # 5.3 Distributions & Relationships
     st.subheader("5.3 Key Distributions and Relationships")
+    st.write("Understand the spread and shape of your data, and how different numerical features correlate with each other.")
 
     col_dist1, col_dist2 = st.columns(2)
 
@@ -483,13 +566,15 @@ with tab2:
     
     with st.spinner("Generating correlation heatmap..."):
         st.write("#### Correlation Heatmap of Numerical Features")
+        st.write("A correlation heatmap shows how strongly pairs of numerical variables are related. Values closer to 1 or -1 indicate a stronger relationship (positive or negative).")
         fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
-        # Select only relevant numerical columns for correlation
+        # Select only relevant numerical columns for correlation to avoid overcrowding the map
         numerical_data_for_corr = filtered_data[
             ['total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated',
              'New_deaths', 'population', 'ratio', 'vaccination_coverage', 'days_since_start',
              'new_deaths_per_million', 'total_vaccinations_per_hundred',
-             'daily_vaccinations', 'daily_vaccinated_per_million'] # Added new columns
+             'daily_vaccinations', 'daily_vaccinated_per_million',
+             'daily_deaths_growth_rate', 'daily_vaccinations_growth_rate'] # Added new growth rate metrics
         ].corr()
         sns.heatmap(numerical_data_for_corr, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5, ax=ax_corr)
         ax_corr.set_title('Correlation Matrix of Key Metrics')
@@ -499,18 +584,31 @@ with tab2:
     st.markdown("---")
 
     st.subheader("5.4 Interactive Scatter Plot: Explore Relationships")
-    st.write("Select X and Y axes to visualize the relationship between different numerical metrics.")
+    st.write("Select any two numerical metrics to visualize their relationship using a scatter plot. A regression line can be added to show the general trend.")
     
+    # Define all numerical columns available for scatter plot
     numerical_cols = ['total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated',
                       'New_deaths', 'population', 'ratio', 'vaccination_coverage', 'days_since_start',
                       'new_deaths_per_million', 'total_vaccinations_per_hundred',
-                      'daily_vaccinations', 'daily_vaccinated_per_million'] # Added new columns
+                      'daily_vaccinations', 'daily_vaccinated_per_million',
+                      'daily_deaths_growth_rate', 'daily_vaccinations_growth_rate'] 
     
-    scatter_x = st.selectbox("Select X-axis for Scatter Plot:", options=numerical_cols, index=numerical_cols.index('vaccination_coverage'), key='scatter_x') 
-    scatter_y = st.selectbox("Select Y-axis for Scatter Plot:", options=numerical_cols, index=numerical_cols.index('New_deaths'), key='scatter_y') 
-    scatter_hue = st.selectbox("Color by (Optional) for Scatter Plot:", options=['None', 'country'], key='scatter_hue') 
+    scatter_x = st.selectbox("Select X-axis for Scatter Plot:", 
+                             options=numerical_cols, 
+                             index=numerical_cols.index('vaccination_coverage'), 
+                             key='scatter_x',
+                             help="Choose the metric for the horizontal axis.") 
+    scatter_y = st.selectbox("Select Y-axis for Scatter Plot:", 
+                             options=numerical_cols, 
+                             index=numerical_cols.index('New_deaths'), 
+                             key='scatter_y',
+                             help="Choose the metric for the vertical axis.") 
+    scatter_hue = st.selectbox("Color points by (Optional):", 
+                               options=['None', 'country'], 
+                               key='scatter_hue',
+                               help="Color points by country to distinguish trends per nation.") 
     
-    add_regression_line = st.checkbox("Add Regression Line to Scatter Plot", value=False, key='scatter_reg_line') 
+    add_regression_line = st.checkbox("Add Regression Line to Scatter Plot", value=False, key='scatter_reg_line', help="Adds a best-fit line to show the general relationship.") 
 
     with st.spinner("Generating scatter plot..."):
         fig_scatter, ax_scatter = plt.subplots(figsize=(10, 6))
@@ -518,9 +616,9 @@ with tab2:
         if scatter_hue == 'country':
             sns.scatterplot(data=filtered_data, x=scatter_x, y=scatter_y, hue='country', ax=ax_scatter, s=100, alpha=0.7)
             if add_regression_line:
-                for country_val in filtered_data['country'].unique(): # Use country_val to avoid conflict
+                for country_val in filtered_data['country'].unique(): 
                     sns.regplot(data=filtered_data[filtered_data['country'] == country_val], x=scatter_x, y=scatter_y, ax=ax_scatter, scatter=False, line_kws={'linestyle':'--', 'alpha':0.6})
-            ax_scatter.legend(title='Country', bbox_to_anchor=(1.05, 1), loc='upper left')
+            ax_scatter.legend(title='Country', bbox_to_anchor=(1.05, 1), loc='upper left') # Place legend outside to avoid overlap
         else:
             sns.scatterplot(data=filtered_data, x=scatter_x, y=scatter_y, ax=ax_scatter, s=100, alpha=0.7)
             if add_regression_line:
@@ -537,14 +635,16 @@ with tab2:
 
     if len(selected_countries) > 1: # Only show comparative plots if multiple countries are selected
         st.subheader("5.5 Comparative Distributions Across Countries")
-        st.write("Compare the spread and central tendency of key metrics for selected countries.")
+        st.write("Compare the distribution (spread and central tendency) of a selected metric across multiple countries using violin plots. This shows not just averages but also density and range of values.")
         
-        box_plot_metric = st.selectbox("Select Metric for Comparative Plot:", options=['New_deaths', 'new_deaths_per_million', 'total_vaccinations', 'total_vaccinations_per_hundred', 'people_vaccinated', 'people_fully_vaccinated', 'population', 'ratio', 'vaccination_coverage', 'daily_vaccinations', 'daily_vaccinated_per_million'], key='comp_plot_metric') # Added new metrics
+        box_plot_metric = st.selectbox("Select Metric for Comparative Plot:", 
+                                       options=['New_deaths', 'new_deaths_per_million', 'total_vaccinations', 'total_vaccinations_per_hundred', 'people_vaccinated', 'people_fully_vaccinated', 'population', 'ratio', 'vaccination_coverage', 'daily_vaccinations', 'daily_vaccinated_per_million', 'daily_deaths_growth_rate', 'daily_vaccinations_growth_rate'], 
+                                       key='comp_plot_metric',
+                                       help="Choose a numerical metric to compare its distribution across selected countries.") 
         
         with st.spinner(f"Generating comparative plot for {box_plot_metric.replace('_', ' ').title()}..."):
-            # Use violin plot for richer distribution insights, or boxplot if preferred
-            fig_comp, ax_comp = plt.subplots(figsize=(10, max(6, len(selected_countries) * 0.5)))
-            sns.violinplot(data=filtered_data, x=box_plot_metric, y='country', palette='coolwarm', ax=ax_comp) # Changed to violinplot
+            fig_comp, ax_comp = plt.subplots(figsize=(10, max(6, len(selected_countries) * 0.5))) # Dynamic height
+            sns.violinplot(data=filtered_data, x=box_plot_metric, y='country', palette='coolwarm', ax=ax_comp) 
             ax_comp.set_title(f'Distribution of {box_plot_metric.replace("_", " ").title()} per Country')
             ax_comp.set_xlabel(box_plot_metric.replace('_', ' ').title())
             ax_comp.set_ylabel('Country')
@@ -556,31 +656,26 @@ with tab2:
     
     st.markdown("---")
 
-    # New section: Daily Change (Difference from previous day)
     st.subheader("5.6 Daily Change in Metrics")
-    st.write("Visualize the daily increase or decrease in vaccinations and deaths.")
+    st.write("Visualize the day-to-day increase or decrease in cumulative metrics like total vaccinations, or the direct daily counts for new deaths and daily vaccinations.")
 
-    daily_change_metric_options = ['New_deaths', 'total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated', 'daily_vaccinations'] # Added daily_vaccinations directly
+    daily_change_metric_options = ['New_deaths', 'total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated', 'daily_vaccinations'] 
     daily_change_metric = st.selectbox(
         "Select Metric to show Daily Change:",
         options=daily_change_metric_options,
         index=0, 
-        key='daily_change_metric' 
+        key='daily_change_metric',
+        help="Choose a metric to see its daily change trend. 'New_deaths' and 'daily_vaccinations' are already daily counts."
     )
 
     with st.spinner(f"Calculating daily change for {daily_change_metric.replace('_', ' ').title()}..."):
         filtered_data_sorted_for_diff = filtered_data.sort_values(by=['country', 'date'])
         
-        # Determine the column to plot and its label
-        if daily_change_metric == 'New_deaths':
-            data_to_plot_col = 'New_deaths'
-            y_label_diff = 'Daily New Deaths'
-        elif daily_change_metric == 'daily_vaccinations':
-            data_to_plot_col = 'daily_vaccinations'
-            y_label_diff = 'Daily Vaccinations'
-        else:
-            # For cumulative metrics like total_vaccinations, people_vaccinated, people_fully_vaccinated,
-            # we calculate the actual daily change
+        data_to_plot_col = daily_change_metric
+        y_label_diff = daily_change_metric.replace("_", " ").title()
+        
+        if daily_change_metric not in ['New_deaths', 'daily_vaccinations']:
+            # For cumulative metrics, calculate the actual daily change
             daily_data_to_plot_temp = filtered_data_sorted_for_diff.copy()
             daily_data_to_plot_temp[f'{daily_change_metric}_calculated_daily_change'] = daily_data_to_plot_temp.groupby('country')[daily_change_metric].diff().fillna(0)
             data_to_plot_col = f'{daily_change_metric}_calculated_daily_change'
@@ -598,23 +693,21 @@ with tab2:
     st.markdown("---")
 
     st.subheader("5.7 Latest Vaccination Status Distribution")
-    st.write("Understand the approximate distribution of vaccination status (at least one dose, fully vaccinated, unvaccinated) for the latest available date in the selected period.")
+    st.write("This pie chart shows the overall approximate distribution of vaccination status (fully vaccinated, partially vaccinated, unvaccinated) for the latest available date across all selected countries.")
 
     with st.spinner("Calculating vaccination status distribution..."):
-        # Get the latest date for each country within the filtered data
         latest_date_per_country = filtered_data.groupby('country')['date'].max().reset_index()
-        
-        # Merge to get the corresponding vaccination and population data for the latest date
         latest_status_data = pd.merge(latest_date_per_country, filtered_data, on=['country', 'date'], how='left')
 
         if not latest_status_data.empty:
-            # Aggregate for a single pie chart if multiple countries are selected
             total_people_vaccinated = latest_status_data['people_vaccinated'].sum()
             total_people_fully_vaccinated = latest_status_data['people_fully_vaccinated'].sum()
             total_population = latest_status_data['population'].sum()
 
+            # Adjust if people_fully_vaccinated is somehow higher than people_vaccinated (data anomaly)
             total_people_vaccinated_adjusted = max(total_people_vaccinated, total_people_fully_vaccinated)
             
+            # Calculate the segments for the pie chart, ensuring non-negative values
             unvaccinated = max(0, total_population - total_people_vaccinated_adjusted)
             fully_vaccinated = total_people_fully_vaccinated
             partially_vaccinated = max(0, total_people_vaccinated_adjusted - total_people_fully_vaccinated)
@@ -623,47 +716,48 @@ with tab2:
                 'Status': ['Fully Vaccinated', 'Partially Vaccinated', 'Unvaccinated'],
                 'Count': [fully_vaccinated, partially_vaccinated, unvaccinated]
             })
-            pie_data = pie_data[pie_data['Count'] > 0]
+            pie_data = pie_data[pie_data['Count'] > 0] # Filter out zero counts for clearer pie chart
 
             if not pie_data.empty:
                 fig_pie, ax_pie = plt.subplots(figsize=(8, 8))
                 ax_pie.pie(pie_data['Count'], labels=pie_data['Status'], autopct='%1.1f%%', startangle=90, colors=sns.color_palette("pastel"))
                 ax_pie.set_title(f'Latest Vaccination Status Distribution ({date_range[1].strftime("%Y-%m-%d")})')
-                ax_pie.axis('equal') 
+                ax_pie.axis('equal') # Equal aspect ratio ensures that pie is drawn as a circle.
                 st.pyplot(fig_pie)
             else:
-                st.info("No vaccination status data to display for the selected period.")
+                st.info("No vaccination status data to display for the selected period. This might happen if 'people_vaccinated' or 'people_fully_vaccinated' counts are consistently zero or missing for the latest dates.")
         else:
-            st.info("No latest vaccination status data found for the selected countries/date range.")
+            st.info("No latest vaccination status data found for the selected countries/date range. Please check your filters.")
     st.markdown("---")
 
-    # New section: Monthly/Yearly Aggregations
     st.subheader("5.8 Monthly and Yearly Trends")
-    st.write("Aggregate data to see broader patterns over months or years.")
+    st.write("Aggregate data to see broader patterns and long-term trends by month or year. This can help in understanding seasonalities or major shifts.")
 
-    aggregation_level = st.radio("Aggregate by:", ('Month', 'Year'), key='agg_level') 
+    aggregation_level = st.radio("Aggregate by:", ('Month', 'Year'), key='agg_level', help="Choose to view trends aggregated by month or by year.") 
     aggregation_metric = st.selectbox(
         "Select Metric for Aggregation:",
         options=['New_deaths', 'total_vaccinations', 'people_fully_vaccinated', 'new_deaths_per_million', 'total_vaccinations_per_hundred', 'daily_vaccinations', 'daily_vaccinated_per_million'],
         index=0,
-        key='agg_metric' 
+        key='agg_metric',
+        help="Choose the metric to aggregate and plot over months or years." 
     )
 
     with st.spinner(f"Generating {aggregation_level.lower()}ly trends for {aggregation_metric.replace('_', ' ').title()}..."):
+        # Ensure 'date' is a datetime type before dt.to_period or dt.year
+        if not pd.api.types.is_datetime64_any_dtype(filtered_data['date']):
+            filtered_data['date'] = pd.to_datetime(filtered_data['date'])
+            
+        temp_df_agg = filtered_data.copy() # Create a copy to avoid SettingWithCopyWarning
         if aggregation_level == 'Month':
-            if not pd.api.types.is_datetime64_any_dtype(filtered_data['date']):
-                filtered_data['date'] = pd.to_datetime(filtered_data['date'])
-            filtered_data['year_month'] = filtered_data['date'].dt.to_period('M')
-            grouped_data = filtered_data.groupby(['year_month', 'country'])[aggregation_metric].sum().reset_index()
-            grouped_data['year_month'] = grouped_data['year_month'].astype(str) 
-            x_col_name = 'year_month' 
+            temp_df_agg['time_period'] = temp_df_agg['date'].dt.to_period('M')
+            grouped_data = temp_df_agg.groupby(['time_period', 'country'])[aggregation_metric].sum().reset_index()
+            grouped_data['time_period'] = grouped_data['time_period'].astype(str) # Convert Period to string for plotting
+            x_col_name = 'time_period' 
             x_label = 'Year-Month' 
         else: # Year
-            if not pd.api.types.is_datetime64_any_dtype(filtered_data['date']):
-                filtered_data['date'] = pd.to_datetime(filtered_data['date'])
-            filtered_data['year'] = filtered_data['date'].dt.year
-            grouped_data = filtered_data.groupby(['year', 'country'])[aggregation_metric].sum().reset_index()
-            x_col_name = 'year' 
+            temp_df_agg['time_period'] = temp_df_agg['date'].dt.year
+            grouped_data = temp_df_agg.groupby(['time_period', 'country'])[aggregation_metric].sum().reset_index()
+            x_col_name = 'time_period' 
             x_label = 'Year' 
 
         fig_agg, ax_agg = plt.subplots(figsize=(12, 6))
@@ -677,14 +771,14 @@ with tab2:
         st.pyplot(fig_agg)
     st.markdown("---")
 
-    # New section: Comparative Density Plots (KDE)
     if len(selected_countries) > 1:
         st.subheader("5.9 Comparative Density Plots (KDE)")
-        st.write("Visualize the distribution shape of key metrics across selected countries.")
+        st.write("Kernel Density Estimation (KDE) plots visualize the distribution shape of a metric across selected countries. This helps in understanding data concentration and spread without binning.")
         kde_metric = st.selectbox(
             "Select Metric for Density Plot:",
-            options=['New_deaths', 'new_deaths_per_million', 'vaccination_coverage', 'total_vaccinations_per_hundred', 'daily_vaccinations', 'daily_vaccinated_per_million'],
-            key='kde_metric'
+            options=['New_deaths', 'new_deaths_per_million', 'vaccination_coverage', 'total_vaccinations_per_hundred', 'daily_vaccinations', 'daily_vaccinated_per_million', 'daily_deaths_growth_rate', 'daily_vaccinations_growth_rate'],
+            key='kde_metric',
+            help="Choose a metric to compare its density distribution across selected countries."
         )
         with st.spinner(f"Generating density plot for {kde_metric.replace('_', ' ').title()}..."):
             fig_kde, ax_kde = plt.subplots(figsize=(10, 6))
@@ -699,176 +793,291 @@ with tab2:
         st.info("Select multiple countries in the sidebar to view comparative density plots.")
     st.markdown("---")
 
-    # New section: Box Plot for 'ratio' vs 'vaccination_coverage' (if meaningful)
-    # Since ratio and vaccination_coverage are somewhat related, let's explore their distribution
-    # if st.checkbox("Show Box Plot for Ratio vs. Vaccination Coverage (if applicable)"):
-    #     if not filtered_data.empty and 'ratio' in filtered_data.columns and 'vaccination_coverage' in filtered_data.columns:
-    #         fig_box_ratio, ax_box_ratio = plt.subplots(figsize=(10, 6))
-    #         sns.boxplot(data=filtered_data, x='ratio', y='country', ax=ax_box_ratio)
-    #         ax_box_ratio.set_title('Distribution of Ratio by Country')
-    #         ax_box_ratio.set_xlabel('Ratio')
-    #         ax_box_ratio.set_ylabel('Country')
-    #         st.pyplot(fig_box_ratio)
-    #     else:
-    #         st.info("Ratio or Vaccination Coverage data not available for this view.")
-    # st.markdown("---")
+    st.subheader("5.10 Growth Rate Trends")
+    st.write("Examine the daily percentage change in new deaths and daily vaccinations. Positive values indicate growth, negative values indicate decline.")
+
+    growth_rate_metric = st.selectbox(
+        "Select Growth Rate Metric:",
+        options=['daily_deaths_growth_rate', 'daily_vaccinations_growth_rate'],
+        index=0,
+        key='growth_rate_metric',
+        help="View how quickly new deaths or daily vaccinations are changing percentage-wise."
+    )
+
+    with st.spinner(f"Generating growth rate trend for {growth_rate_metric.replace('_', ' ').title()}..."):
+        fig_growth, ax_growth = plt.subplots(figsize=(12, 6))
+        sns.lineplot(data=filtered_data, x='date', y=growth_rate_metric, hue='country', ax=ax_growth)
+        ax_growth.set_title(f'Daily {growth_rate_metric.replace("_", " ").title()} Over Time')
+        ax_growth.set_xlabel('Date')
+        ax_growth.set_ylabel('Percentage Change')
+        ax_growth.tick_params(axis='x', rotation=45)
+        ax_growth.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}')) # Format as percentage
+        plt.tight_layout()
+        st.pyplot(fig_growth)
+    st.markdown("---")
+
+    st.subheader("5.11 Lag Plot for Autocorrelation")
+    st.write("A lag plot helps visualize autocorrelation (the relationship between a variable's value and its past values). A linear pattern suggests strong autocorrelation, which is common in time series data.")
+
+    lag_plot_metric = st.selectbox(
+        "Select Metric for Lag Plot:",
+        options=['New_deaths', 'daily_vaccinations', 'vaccination_coverage', 'new_deaths_per_million'],
+        index=0,
+        key='lag_plot_metric',
+        help="Choose a metric to analyze its autocorrelation with past values."
+    )
+    lag_days = st.slider("Select Lag (in days):", min_value=1, max_value=30, value=7, key='lag_days', help="The number of days back to compare the current metric value against.")
+
+    with st.spinner(f"Generating lag plot for {lag_plot_metric.replace('_', ' ').title()} with lag {lag_days} days..."):
+        lag_data = filtered_data[['date', 'country', lag_plot_metric]].copy()
+        
+        # Sort data to ensure correct lag calculation
+        lag_data = lag_data.sort_values(by=['country', 'date'])
+        
+        # Calculate lagged values grouped by country to prevent mixing data from different countries
+        lag_data['lagged_metric'] = lag_data.groupby('country')[lag_plot_metric].shift(lag_days)
+        
+        # Drop rows with NaN values (where lag could not be calculated, e.g., at the beginning of the series)
+        lag_data.dropna(subset=[lag_plot_metric, 'lagged_metric'], inplace=True)
+
+        if not lag_data.empty:
+            fig_lag, ax_lag = plt.subplots(figsize=(10, 8))
+            sns.scatterplot(data=lag_data, x='lagged_metric', y=lag_plot_metric, hue='country', s=50, alpha=0.6, ax=ax_lag)
+            ax_lag.set_title(f'Lag Plot: {lag_plot_metric.replace("_", " ").title()} (t) vs. {lag_days}-day Lagged (t-{lag_days})')
+            ax_lag.set_xlabel(f'{lag_plot_metric.replace("_", " ").title()} (at t-{lag_days} days)')
+            ax_lag.set_ylabel(f'{lag_plot_metric.replace("_", " ").title()} (at time t)')
+            ax_lag.ticklabel_format(style='plain', axis='both')
+            plt.tight_layout()
+            st.pyplot(fig_lag)
+        else:
+            st.info("Not enough data to generate lag plot for the selected parameters. Try a smaller lag or wider date range.")
+    st.markdown("---")
+
 
 with tab3:
-    st.header("🔮 Predict New COVID-19 Deaths")
-    st.write("Enter values for key metrics to predict the number of New Deaths.")
+    st.header("🔮 COVID-19 Prediction Tool")
+    st.write("Use our trained machine learning models to predict future **New Deaths** or **Daily Vaccinations** based on input features. Adjust the sliders and input fields below to see how different scenarios affect the predictions.")
 
-    # Create input fields for the model features
-    input_col1, input_col2, input_col3 = st.columns(3)
+    prediction_type = st.radio(
+        "Choose Prediction Type:",
+        ('New Deaths', 'Daily Vaccinations'),
+        key='prediction_type_selector',
+        help="Select whether you want to predict daily new deaths or daily vaccination counts."
+    )
 
-    # Initialize input values with means from the filtered data, or sensible defaults
-    default_total_vacc = filtered_data['total_vaccinations'].mean() if not filtered_data.empty else 0
-    default_people_vacc = filtered_data['people_vaccinated'].mean() if not filtered_data.empty else 0
-    default_fully_vacc = filtered_data['people_fully_vaccinated'].mean() if not filtered_data.empty else 0
-    default_population = filtered_data['population'].mean() if not filtered_data.empty else 1000000 
-    default_ratio = filtered_data['ratio'].mean() if not filtered_data.empty else 0
-    default_vacc_coverage = filtered_data['vaccination_coverage'].mean() if not filtered_data.empty else 0.1
-    default_days_since_start_date = max_date_data + pd.Timedelta(days=7)
+    current_model = None
+    current_features = []
+    prediction_label = ""
+    if prediction_type == 'New Deaths' and models['deaths']:
+        current_model = models['deaths']
+        current_features = model_features_dict['deaths']
+        prediction_label = "Predicted New Deaths"
+    elif prediction_type == 'Daily Vaccinations' and models['vaccinations']:
+        current_model = models['vaccinations']
+        current_features = model_features_dict['vaccinations']
+        prediction_label = "Predicted Daily Vaccinations"
+    
+    if current_model is None:
+        st.warning(f"The model for '{prediction_type}' is not loaded. Please ensure 'train_covid_model.py' has been run successfully to generate the necessary model files (`trained_deaths_model.pkl`, `model_features_deaths.pkl`, `trained_vaccinations_model.pkl`, `model_features_vaccinations.pkl`).")
+    else:
+        st.write(f"Enter values for the features below to predict **{prediction_type}**: *(Default values are based on the average of your currently filtered data.)*")
 
-    with input_col1:
-        total_vaccinations_pred = st.number_input("Total Vaccinations:",
-                                                  min_value=0.0,
-                                                  value=float(default_total_vacc),
-                                                  step=10000.0,
-                                                  format="%.0f", key='total_vacc_pred') 
-        people_vaccinated_pred = st.number_input("People Vaccinated (at least one dose):",
-                                                 min_value=0.0,
-                                                 value=float(default_people_vacc),
-                                                 step=10000.0,
-                                                 format="%.0f", key='people_vacc_pred') 
-        people_fully_vaccinated_pred = st.number_input("People Fully Vaccinated:",
-                                                        min_value=0.0,
-                                                        value=float(default_fully_vacc),
-                                                        step=10000.0,
-                                                        format="%.0f", key='people_fully_vacc_pred') 
-    with input_col2:
-        population_pred = st.number_input("Population:",
-                                          min_value=1.0,
-                                          value=float(default_population),
-                                          step=100000.0,
-                                          format="%.0f", key='population_pred') 
-        ratio_pred = st.number_input("Ratio:",
-                                     min_value=0.0,
-                                     value=float(default_ratio),
-                                     step=0.01,
-                                     format="%.4f", key='ratio_pred') 
-        vaccination_coverage_pred = st.number_input("Vaccination Coverage (Fully Vaccinated / Population):",
-                                                    min_value=0.0,
-                                                    max_value=1.0,
-                                                    value=float(default_vacc_coverage),
-                                                    step=0.01,
-                                                    format="%.2f", key='vacc_coverage_pred') 
-    with input_col3:
-        prediction_date_input = st.date_input("Select Prediction Date:",
-                                        value=default_days_since_start_date.date(),
-                                        min_value=covid_data['date'].min().date(),
-                                        key='prediction_date_input') 
-        
-        prediction_datetime = datetime.datetime.combine(prediction_date_input, datetime.time.min)
+        input_values = {} # Dictionary to store user inputs
+        input_cols = st.columns(3) # Use columns for a cleaner layout
 
-        days_since_start_pred = (prediction_datetime - covid_data['date'].min().to_pydatetime()).days
-        st.info(f"Calculated days since start: {days_since_start_pred}")
+        # Helper function to get a sensible default value for input fields
+        def get_default_value(col_name, fallback_value):
+            if not filtered_data.empty and col_name in filtered_data.columns and filtered_data[col_name].sum() > 0:
+                # Use mean of filtered data if available and non-zero
+                return float(filtered_data[col_name].mean())
+            return float(fallback_value) # Fallback to a predefined default
+
+        # Predefined sensible defaults for features that might be needed by models
+        feature_defaults = {
+            'total_vaccinations': 100000.0,
+            'people_vaccinated': 50000.0,
+            'people_fully_vaccinated': 25000.0,
+            'population': 10000000.0, # A larger default for population
+            'ratio': 0.05,
+            'vaccination_coverage': 0.025,
+            'New_deaths': 10.0, 
+        }
+
+        # Dynamically create input fields based on the selected model's required features
+        with input_cols[0]:
+            for feature in ['total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated']:
+                if feature in current_features:
+                    input_values[feature] = st.number_input(
+                        feature.replace('_', ' ').title() + ":",
+                        min_value=0.0,
+                        value=get_default_value(feature, feature_defaults.get(feature, 0.0)),
+                        step=10000.0, # Larger step for large numbers
+                        format="%.0f", # Format as integer
+                        key=f'pred_input_{feature}',
+                        help=f"Enter the {feature.replace('_', ' ').lower()} value for prediction."
+                    )
+        with input_cols[1]:
+            for feature in ['population', 'ratio', 'vaccination_coverage']:
+                if feature in current_features:
+                    # Adjust min_value and format based on feature type
+                    min_val = 1.0 if feature == 'population' else 0.0
+                    max_val = 1.0 if feature == 'vaccination_coverage' else None
+                    step_val = 0.01 if feature in ['ratio', 'vaccination_coverage'] else 100000.0
+                    format_str = "%.4f" if feature in ['ratio', 'vaccination_coverage'] else "%.0f"
+
+                    input_values[feature] = st.number_input(
+                        feature.replace('_', ' ').title() + ":",
+                        min_value=min_val,
+                        max_value=max_val,
+                        value=get_default_value(feature, feature_defaults.get(feature, min_val)),
+                        step=step_val,
+                        format=format_str, 
+                        key=f'pred_input_{feature}',
+                        help=f"Enter the {feature.replace('_', ' ').lower()} value for prediction."
+                    )
+        with input_cols[2]:
+            # Date input for 'days_since_start' feature
+            prediction_date_input = st.date_input("Select Prediction Date:",
+                                            value=default_days_since_start_date_for_input, # Uses global default
+                                            min_value=covid_data['date'].min().date(), # Prevents dates before dataset start
+                                            key='prediction_date_input_tab3',
+                                            help="Choose the date for which you want to make a prediction. 'Days since start' will be calculated automatically."
+                                            )
+            
+            prediction_datetime = datetime.datetime.combine(prediction_date_input, datetime.time.min)
+            input_values['days_since_start'] = (prediction_datetime - covid_data['date'].min().to_pydatetime()).days
+            st.info(f"Calculated days since start: **{input_values['days_since_start']}** days.")
+            
+            # This feature is only relevant for the daily_vaccinations model in this setup
+            if 'New_deaths' in current_features: 
+                input_values['New_deaths'] = st.number_input("New Deaths (for Daily Vaccinations Model):",
+                                                             min_value=0.0,
+                                                             value=get_default_value('New_deaths', feature_defaults.get('New_deaths', 0.0)),
+                                                             step=100.0,
+                                                             format="%.0f", 
+                                                             key='pred_input_new_deaths',
+                                                             help="Input for 'New Deaths' is used as a feature when predicting 'Daily Vaccinations'."
+                                                            )
+
+        # Create a DataFrame with the correct features and their order for the selected model
+        # This ensures the input DataFrame matches the training features for the model.
+        final_input_for_prediction = pd.DataFrame([input_values])[current_features]
 
 
-    # Prepare input for prediction, ensuring column order matches training
-    input_for_prediction = pd.DataFrame([[
-        total_vaccinations_pred,
-        people_vaccinated_pred,
-        people_fully_vaccinated_pred,
-        population_pred,
-        ratio_pred,
-        vaccination_coverage_pred,
-        days_since_start_pred
-    ]], columns=model_features)
+        if st.button(f"Predict {prediction_type}", key='predict_button'):
+            with st.spinner(f"Generating {prediction_type.lower()} prediction..."):
+                try:
+                    # Make prediction using the loaded model
+                    predicted_value_transformed = current_model.predict(final_input_for_prediction)[0]
+                    # Inverse transform the prediction (from log1p back to original scale)
+                    predicted_value = np.expm1(predicted_value_transformed)
+                    # Ensure prediction is non-negative and round to a whole number as deaths/vaccinations are integers
+                    predicted_value = max(0, round(predicted_value)) 
 
-    if st.button("Predict New Deaths"):
-        with st.spinner("Generating prediction..."):
-            try:
-                predicted_deaths_transformed = model.predict(input_for_prediction)[0]
-                predicted_deaths = np.expm1(predicted_deaths_transformed)
-                predicted_deaths = max(0, predicted_deaths)
+                    st.success(f"**{prediction_label}:** {int(predicted_value):,} ")
+                    st.caption("*(Prediction is an estimate based on the model's training data. Results may vary and are best interpreted in the context of the model's performance metrics.)*")
 
-                st.success(f"**Predicted New Deaths:** {int(round(predicted_deaths))} ")
-                st.caption("*(Prediction is an estimate based on the model's training data. Results may vary.)*")
-
-            except Exception as e:
-                st.error(f"An error occurred during prediction: {e}")
-                st.warning("Please ensure all input values are valid numbers and model_features.pkl is correctly loaded.")
+                except Exception as e:
+                    st.error(f"An error occurred during prediction: {e}. Please check your input values.")
+                    st.warning("Ensure all input values are valid numbers. If the issue persists, verify that the trained model files (`.pkl` files) are correctly generated and loaded.")
 
     st.markdown("---")
 
 with tab4:
     st.header("⚙️ Model Insights and Performance Overview")
-    st.write("Understand how the prediction model works and its overall accuracy.")
+    st.write("Understand how our machine learning models work, which factors they consider most important, and how accurate their predictions are.")
 
-    # 7.1 Feature Importance
-    st.subheader("7.1 Feature Importance")
-    st.write("Random Forest models indicate the relative importance of each feature in making predictions.")
+    model_insight_selector = st.selectbox(
+        "Select Model to View Insights:",
+        options=['New Deaths Model', 'Daily Vaccinations Model'],
+        key='model_insight_selector',
+        help="Choose which prediction model's insights you want to explore."
+    )
 
-    with st.spinner("Calculating feature importances..."):
-        feature_importances = model.feature_importances_
+    selected_model_name_key = 'deaths' if model_insight_selector == 'New Deaths Model' else 'vaccinations'
+    selected_model = models.get(selected_model_name_key)
+    selected_features = model_features_dict.get(selected_model_name_key)
 
-        importance_df = pd.DataFrame({
-            'Feature': model_features,
-            'Importance': feature_importances
-        }).sort_values(by='Importance', ascending=False)
+    if selected_model is None:
+        st.warning(f"Model for '{model_insight_selector}' is not loaded. Please run 'train_covid_model.py' to generate model files before viewing its insights.")
+    else:
+        # 7.1 Feature Importance
+        st.subheader(f"7.1 Feature Importance for {model_insight_selector}")
+        st.write("This table shows which features (input variables) the Random Forest model considered most important when making its predictions. A higher 'Importance' value means the feature had more influence on the model's predicted outcome.")
 
-        st.dataframe(importance_df.set_index('Feature'))
-        st.caption("A higher 'Importance' value means the feature had more influence on the model's predicted number of deaths.")
+        with st.spinner("Calculating feature importances..."):
+            feature_importances = selected_model.feature_importances_
 
-    # 7.2 Model Performance (Accuracy Metrics)
-    st.subheader("7.2 Model Performance (R-squared & RMSE)")
-    st.write("These metrics indicate how well the model explains the variability in New Deaths and its typical prediction error.")
+            importance_df = pd.DataFrame({
+                'Feature': selected_features,
+                'Importance': feature_importances
+            }).sort_values(by='Importance', ascending=False)
 
-    from sklearn.model_selection import train_test_split
-    from sklearn.metrics import mean_squared_error, r2_score
+            st.dataframe(importance_df.set_index('Feature'))
+            st.caption("Feature importance is calculated based on how much each feature contributes to reducing impurity in the decision trees of the Random Forest.")
 
-    with st.spinner("Calculating model performance metrics..."):
-        # Reload data to ensure clean split for metrics, consistent with training
-        temp_covid_data = load_data() 
-        # The load_data function now handles basic cleaning and feature engineering,
-        # so we just need to ensure the data is filtered and transformed consistent with training.
-        
-        # Filter for valid target values before splitting for metrics
-        y_full_temp = temp_covid_data['New_deaths']
-        y_clean_eval_temp = y_full_temp[y_full_temp >= 0]
-        y_transformed_eval_temp = np.log1p(y_clean_eval_temp)
+        # 7.2 Model Performance (Accuracy Metrics)
+        st.subheader(f"7.2 Model Performance for {model_insight_selector} (R-squared & RMSE)")
+        st.write("These metrics indicate how well the model performs on unseen data. They help you understand the reliability and accuracy of the predictions.")
 
-        valid_indices_eval_temp = y_transformed_eval_temp.dropna().index
-        X_full_temp = temp_covid_data.loc[valid_indices_eval_temp, model_features]
-        y_filtered_transformed_eval_temp = y_transformed_eval_temp.loc[valid_indices_eval_temp]
+        from sklearn.model_selection import train_test_split
+        from sklearn.metrics import mean_squared_error, r2_score
 
-        if np.isinf(y_filtered_transformed_eval_temp).any():
-            inf_indices_eval_temp = np.isinf(y_filtered_transformed_eval_temp)
-            X_full_temp = X_full_temp.loc[~inf_indices_eval_temp]
-            y_filtered_transformed_eval_temp = y_filtered_transformed_eval_temp.loc[~inf_indices_eval_temp]
+        with st.spinner(f"Calculating {model_insight_selector} performance metrics..."):
+            # Load fresh data for evaluation to ensure an unbiased performance check
+            temp_covid_data_eval = load_data() 
+            
+            target_col_eval = 'New_deaths' if selected_model_name_key == 'deaths' else 'daily_vaccinations'
+            features_list_eval = model_features_dict[selected_model_name_key]
 
+            y_full_temp_eval = temp_covid_data_eval[target_col_eval]
+            y_clean_eval_temp = y_full_temp_eval[y_full_temp_eval >= 0] # Filter out negative target values
+            y_transformed_eval_temp = np.log1p(y_clean_eval_temp) # Apply log1p transformation
 
-        _, X_test_eval, _, y_test_transformed_eval = train_test_split(
-            X_full_temp, y_filtered_transformed_eval_temp, test_size=0.2, random_state=42
-        )
+            # Align X and y after filtering and transformation
+            valid_indices_eval_temp = y_transformed_eval_temp.dropna().index
+            X_full_temp_eval = temp_covid_data_eval.loc[valid_indices_eval_temp, features_list_eval]
+            y_filtered_transformed_eval_temp = y_transformed_eval_temp.loc[valid_indices_eval_temp]
 
-        test_predictions_transformed = model.predict(X_test_eval)
-        test_predictions = np.expm1(test_predictions_transformed)
-        test_predictions[test_predictions < 0] = 0
+            # Handle potential inf values after log1p (though less likely with >=0 filter)
+            if np.isinf(y_filtered_transformed_eval_temp).any():
+                inf_indices_eval_temp = np.isinf(y_filtered_transformed_eval_temp)
+                X_full_temp_eval = X_full_temp_eval.loc[~inf_indices_eval_temp]
+                y_filtered_transformed_eval_temp = y_filtered_transformed_eval_temp.loc[~inf_indices_eval_temp]
 
-        y_test_original_scale = temp_covid_data.loc[y_test_transformed_eval.index, 'New_deaths']
+            # Drop rows with NaN in features for evaluation to ensure clean data for model prediction
+            initial_rows_eval = len(X_full_temp_eval)
+            X_full_temp_eval.dropna(inplace=True)
+            y_filtered_transformed_eval_temp = y_filtered_transformed_eval_temp.loc[X_full_temp_eval.index]
+            if len(X_full_temp_eval) < initial_rows_eval:
+                st.warning(f"For model evaluation of {model_insight_selector}, dropped {initial_rows_eval - len(X_full_temp_eval)} rows due to missing feature values.")
+            
+            if X_full_temp_eval.empty:
+                st.info(f"Not enough clean data to perform robust evaluation for {model_insight_selector}. Try a wider date range or more countries.")
+            else:
+                # Split data for evaluation (using a 80/20 train-test split, consistent with training script)
+                _, X_test_eval, _, y_test_transformed_eval = train_test_split(
+                    X_full_temp_eval, y_filtered_transformed_eval_temp, test_size=0.2, random_state=42
+                )
 
-        test_mse = mean_squared_error(y_test_original_scale, test_predictions)
-        test_rmse = np.sqrt(test_mse)
-        test_r2 = r2_score(y_test_original_scale, test_predictions)
+                test_predictions_transformed = selected_model.predict(X_test_eval)
+                test_predictions = np.expm1(test_predictions_transformed) # Inverse transform predictions
+                test_predictions[test_predictions < 0] = 0 # Ensure non-negative predictions
 
-        col_metrics1, col_metrics2 = st.columns(2)
-        with col_metrics1:
-            st.metric(label="R-squared (R²)", value=f"{test_r2:.2f}")
-            st.caption("R-squared measures how well future samples are likely to be predicted by the model. Higher is better (max 1.0).")
-        with col_metrics2:
-            st.metric(label="Root Mean Squared Error (RMSE)", value=f"{test_rmse:.2f}")
-            st.caption("RMSE represents the typical magnitude of the prediction error in the original units (number of deaths). Lower is better.")
+                y_test_original_scale = temp_covid_data_eval.loc[y_test_transformed_eval.index, target_col_eval] # Get original scale target values
+
+                # Calculate evaluation metrics
+                test_mse = mean_squared_error(y_test_original_scale, test_predictions)
+                test_rmse = np.sqrt(test_mse)
+                test_r2 = r2_score(y_test_original_scale, test_predictions)
+
+                col_metrics1, col_metrics2 = st.columns(2)
+                with col_metrics1:
+                    st.metric(label="R-squared (R²)", value=f"{test_r2:.2f}")
+                    st.caption("R-squared measures how well the model's predictions fit the actual data. A value of 1.0 means perfect fit, 0.0 means no better than predicting the mean, and negative values indicate a very poor fit.")
+                with col_metrics2:
+                    st.metric(label="Root Mean Squared Error (RMSE)", value=f"{test_rmse:,.2f}")
+                    st.caption(f"RMSE represents the average magnitude of the errors in predictions. It is in the same units as the target variable ({target_col_eval.replace('_', ' ').title()}). Lower values indicate better accuracy.")
 
     st.markdown("---")
 
@@ -876,21 +1085,21 @@ with tab4:
     st.header("About This Project")
     st.write(
         """
-        This project demonstrates a comprehensive data science workflow, including:
-        -   **Data Loading & Preprocessing:** Handling time-series data, missing values, and feature engineering with `pandas`.
-        -   **Exploratory Data Analysis (EDA):** Visualizing complex trends and distributions using `matplotlib` and `seaborn`.
-        -   **Supervised Machine Learning (Regression):** Building and evaluating a `RandomForestRegressor` from `scikit-learn` to predict continuous outcomes.
-        -   **Model Persistence:** Efficiently saving and loading trained models with `joblib`.
-        -   **Interactive Dashboard Development:** Creating a dynamic and user-friendly web application with `Streamlit`.
+        This project demonstrates a comprehensive data science workflow, from data preparation to interactive visualization and machine learning prediction. Key components include:
+        -   **Data Loading & Preprocessing:** Efficiently handling time-series data, imputing missing values, and engineering new features using `pandas`.
+        -   **Exploratory Data Analysis (EDA):** Creating insightful visualizations with `matplotlib` and `seaborn` to uncover trends, distributions, and relationships within the data.
+        -   **Supervised Machine Learning (Regression):** Building and evaluating robust `RandomForestRegressor` models from `scikit-learn` to predict continuous outcomes (new deaths and daily vaccinations).
+        -   **Model Persistence:** Saving and loading trained models using `joblib` for efficient deployment and reuse.
+        -   **Interactive Dashboard Development:** Designing a dynamic and user-friendly web application with `Streamlit`, allowing real-time interaction with data and models.
 
+        **Data Source:**
         The dataset used for this project is **"COVID vaccination vs. mortality"** from Kaggle:
         [https://www.kaggle.com/datasets/sinakaraji/covid-vaccination-vs-mortality](https://www.kaggle.com/datasets/sinakaraji/covid-vaccination-vs-mortality)
 
-        Context of the dataset: The COVID-19 pandemic has caused significant global mortality. This dataset was generated to
-        investigate the impact of coronavirus vaccinations on coronavirus mortality, providing data on vaccination progress
-        and death counts.
+        **Dataset Context:**
+        The COVID-19 pandemic significantly impacted global health. This dataset was compiled to help investigate the potential relationship between coronavirus vaccination efforts and mortality rates, providing valuable time-series data on vaccination progress and daily death counts across various countries.
 
-        This dashboard serves as a hands-on example of applying data science to real-world health data.
+        This dashboard serves as a practical example of applying data science methodologies to real-world public health data.
         """
     )
 st.markdown("---")
