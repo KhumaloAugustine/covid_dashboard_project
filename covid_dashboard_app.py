@@ -1,10 +1,13 @@
-# covid_dashboard_app.py
-# This script creates an interactive Streamlit dashboard
-# for analyzing COVID-19 vaccination and mortality data,
-# and predicting new deaths or daily vaccinations using trained regression models.
-# It now features a simplified tabbed interface and enhanced interactivity,
-# with a stronger focus on comparative analysis for multiple selected countries,
-# and improved user-friendliness across various devices.
+"""
+
+    This script creates an interactive Streamlit dashboard
+    for analyzing COVID-19 vaccination and mortality data,
+    and predicting new deaths or daily vaccinations using trained regression models.
+    It now features a simplified tabbed interface and enhanced interactivity,
+    with a stronger focus on comparative analysis for multiple selected countries,
+    and improved user-friendliness across various devices.
+
+"""
 
 import streamlit as st
 import pandas as pd
