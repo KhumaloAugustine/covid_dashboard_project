@@ -165,6 +165,7 @@ if filtered_data.empty:
 # Reset Filters Button
 if st.sidebar.button("Reset Filters"):
     st.session_state.clear() # Clear all Streamlit session state
+    st.rerun() # Use st.rerun() for newer Streamlit versions
     st.experimental_rerun() # Rerun the app to apply default filters and refresh all components
 
 # Define default_days_since_start_date for prediction tab, accessible globally
@@ -311,28 +312,30 @@ with tab1:
 
         with col_bar1:
             fig_total_deaths, ax_total_deaths = plt.subplots(figsize=(10, max(6, len(period_summary) * 0.5))) # Dynamic height
-            sns.barplot(data=period_summary.sort_values('Total_New_Deaths', ascending=False), x='Total_New_Deaths', y='country', palette='viridis', ax=ax_total_deaths)
+            sns.barplot(data=period_summary.sort_values('Total_New_Deaths', ascending=False), x='Total_New_Deaths', y='country', hue='country', palette='viridis', legend=False, ax=ax_total_deaths) # Added hue and legend=False
             ax_total_deaths.set_title('Total New Deaths per Country (Selected Period)')
             ax_total_deaths.set_xlabel('Total New Deaths')
             ax_total_deaths.set_ylabel('Country')
             ax_total_deaths.ticklabel_format(style='plain', axis='x')
             plt.tight_layout()
             st.pyplot(fig_total_deaths)
+            plt.close(fig_total_deaths) # Close the figure
         
         with col_bar2:
             fig_total_vacc, ax_total_vacc = plt.subplots(figsize=(10, max(6, len(period_summary) * 0.5))) # Dynamic height
-            sns.barplot(data=period_summary.sort_values('Highest_Total_Vaccinations_Reached', ascending=False), x='Highest_Total_Vaccinations_Reached', y='country', palette='cividis', ax=ax_total_vacc)
+            sns.barplot(data=period_summary.sort_values('Highest_Total_Vaccinations_Reached', ascending=False), x='Highest_Total_Vaccinations_Reached', y='country', hue='country', palette='cividis', legend=False, ax=ax_total_vacc) # Added hue and legend=False
             ax_total_vacc.set_title('Highest Total Vaccinations Reached per Country')
             ax_total_vacc.set_xlabel('Highest Total Vaccinations')
             ax_total_vacc.set_ylabel('Country')
             ax_total_vacc.ticklabel_format(style='plain', axis='x')
             plt.tight_layout()
             st.pyplot(fig_total_vacc)
+            plt.close(fig_total_vacc) # Close the figure
         
         # New: Bar plot for Latest Vaccination Coverage
         st.subheader("Latest Vaccination Coverage per Country")
         fig_vacc_coverage_bar, ax_vacc_coverage_bar = plt.subplots(figsize=(10, max(6, len(period_summary) * 0.5)))
-        sns.barplot(data=period_summary.sort_values('Latest_Vaccination_Coverage', ascending=False), x='Latest_Vaccination_Coverage', y='country', palette='rocket', ax=ax_vacc_coverage_bar)
+        sns.barplot(data=period_summary.sort_values('Latest_Vaccination_Coverage', ascending=False), x='Latest_Vaccination_Coverage', y='country', hue='country', palette='rocket', legend=False, ax=ax_vacc_coverage_bar) # Added hue and legend=False
         ax_vacc_coverage_bar.set_title('Latest Vaccination Coverage per Country (Selected Period)')
         ax_vacc_coverage_bar.set_xlabel('Latest Vaccination Coverage (%)')
         ax_vacc_coverage_bar.set_ylabel('Country')
@@ -340,28 +343,31 @@ with tab1:
         ax_vacc_coverage_bar.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: f'{x:.1%}')) # Format x-axis as percentage
         plt.tight_layout()
         st.pyplot(fig_vacc_coverage_bar)
+        plt.close(fig_vacc_coverage_bar) # Close the figure
 
         # New: Bar plot for Average New Deaths per Million
         st.subheader("Average Daily New Deaths per Million per Country")
         fig_deaths_per_million_bar, ax_deaths_per_million_bar = plt.subplots(figsize=(10, max(6, len(period_summary) * 0.5)))
-        sns.barplot(data=period_summary.sort_values('Avg_New_Deaths_Per_Million', ascending=False), x='Avg_New_Deaths_Per_Million', y='country', palette='plasma', ax=ax_deaths_per_million_bar)
+        sns.barplot(data=period_summary.sort_values('Avg_New_Deaths_Per_Million', ascending=False), x='Avg_New_Deaths_Per_Million', y='country', hue='country', palette='plasma', legend=False, ax=ax_deaths_per_million_bar) # Added hue and legend=False
         ax_deaths_per_million_bar.set_title('Average Daily New Deaths per Million per Country (Selected Period)')
         ax_deaths_per_million_bar.set_xlabel('Average New Deaths per Million')
         ax_deaths_per_million_bar.set_ylabel('Country')
         ax_deaths_per_million_bar.ticklabel_format(style='plain', axis='x')
         plt.tight_layout()
         st.pyplot(fig_deaths_per_million_bar)
+        plt.close(fig_deaths_per_million_bar) # Close the figure
         
         # New: Bar plot for Average Daily Vaccinations
         st.subheader("Average Daily Vaccinations per Country")
         fig_avg_daily_vacc, ax_avg_daily_vacc = plt.subplots(figsize=(10, max(6, len(period_summary) * 0.5)))
-        sns.barplot(data=period_summary.sort_values('Avg_Daily_Vaccinations', ascending=False), x='Avg_Daily_Vaccinations', y='country', palette='cubehelix', ax=ax_avg_daily_vacc)
+        sns.barplot(data=period_summary.sort_values('Avg_Daily_Vaccinations', ascending=False), x='Avg_Daily_Vaccinations', y='country', hue='country', palette='cubehelix', legend=False, ax=ax_avg_daily_vacc) # Added hue and legend=False
         ax_avg_daily_vacc.set_title('Average Daily Vaccinations per Country (Selected Period)')
         ax_avg_daily_vacc.set_xlabel('Average Daily Vaccinations')
         ax_avg_daily_vacc.set_ylabel('Country')
         ax_avg_daily_vacc.ticklabel_format(style='plain', axis='x')
         plt.tight_layout()
         st.pyplot(fig_avg_daily_vacc)
+        plt.close(fig_avg_daily_vacc) # Close the figure
 
 
     st.markdown("---")
@@ -465,6 +471,7 @@ with tab2:
         ax_ts.ticklabel_format(style='plain', axis='y') # Prevent scientific notation on Y-axis
         plt.tight_layout() # Adjust layout to prevent labels from overlapping
         st.pyplot(fig_ts)
+        plt.close(fig_ts) # Close the figure
 
     st.markdown("---")
 
@@ -491,6 +498,7 @@ with tab2:
             ax_cum_deaths.ticklabel_format(style='plain', axis='y') 
             plt.tight_layout()
             st.pyplot(fig_cum_deaths)
+            plt.close(fig_cum_deaths) # Close the figure
 
     with col_add_ts2:
         st.write("#### 7-Day Rolling Average of New Deaths")
@@ -506,6 +514,7 @@ with tab2:
             ax_roll_deaths.tick_params(axis='x', rotation=45)
             plt.tight_layout()
             st.pyplot(fig_roll_deaths)
+            plt.close(fig_roll_deaths) # Close the figure
     
     col_add_ts3, col_add_ts4 = st.columns(2)
     with col_add_ts3:
@@ -522,6 +531,7 @@ with tab2:
             ax_cum_vacc.ticklabel_format(style='plain', axis='y')
             plt.tight_layout()
             st.pyplot(fig_cum_vacc)
+            plt.close(fig_cum_vacc) # Close the figure
 
     with col_add_ts4:
         st.write("#### 7-Day Rolling Average of Daily Vaccinations")
@@ -536,6 +546,7 @@ with tab2:
             ax_roll_vacc.tick_params(axis='x', rotation=45)
             plt.tight_layout()
             st.pyplot(fig_roll_vacc)
+            plt.close(fig_roll_vacc) # Close the figure
 
     st.markdown("---")
 
@@ -555,6 +566,7 @@ with tab2:
             ax_hist_deaths.set_ylabel('Frequency')
             plt.tight_layout()
             st.pyplot(fig_hist_deaths)
+            plt.close(fig_hist_deaths) # Close the figure
 
     with col_dist2:
         st.write("#### Distribution of Vaccination Coverage (People Fully Vaccinated / Population)")
@@ -566,6 +578,7 @@ with tab2:
             ax_hist_coverage.set_ylabel('Frequency')
             plt.tight_layout()
             st.pyplot(fig_hist_coverage)
+            plt.close(fig_hist_coverage) # Close the figure
     
     with st.spinner("Generating correlation heatmap..."):
         st.write("#### Correlation Heatmap of Numerical Features")
@@ -583,6 +596,7 @@ with tab2:
         ax_corr.set_title('Correlation Matrix of Key Metrics')
         plt.tight_layout()
         st.pyplot(fig_corr)
+        plt.close(fig_corr) # Close the figure
 
     st.markdown("---")
 
@@ -633,6 +647,7 @@ with tab2:
         ax_scatter.ticklabel_format(style='plain', axis='both')
         plt.tight_layout()
         st.pyplot(fig_scatter)
+        plt.close(fig_scatter) # Close the figure
     
     st.markdown("---")
 
@@ -647,13 +662,14 @@ with tab2:
         
         with st.spinner(f"Generating comparative plot for {box_plot_metric.replace('_', ' ').title()}..."):
             fig_comp, ax_comp = plt.subplots(figsize=(10, max(6, len(selected_countries) * 0.5))) # Dynamic height
-            sns.violinplot(data=filtered_data, x=box_plot_metric, y='country', palette='coolwarm', ax=ax_comp) 
+            sns.violinplot(data=filtered_data, x=box_plot_metric, y='country', hue='country', palette='coolwarm', legend=False, ax=ax_comp) # Added hue and legend=False
             ax_comp.set_title(f'Distribution of {box_plot_metric.replace("_", " ").title()} per Country')
             ax_comp.set_xlabel(box_plot_metric.replace('_', ' ').title())
             ax_comp.set_ylabel('Country')
             ax_comp.ticklabel_format(style='plain', axis='x')
             plt.tight_layout()
             st.pyplot(fig_comp)
+            plt.close(fig_comp) # Close the figure
     else:
         st.info("Select multiple countries in the sidebar to view comparative distribution plots (e.g., Violin Plots).")
     
@@ -693,6 +709,7 @@ with tab2:
         ax_daily_change.ticklabel_format(style='plain', axis='y')
         plt.tight_layout()
         st.pyplot(fig_daily_change)
+        plt.close(fig_daily_change) # Close the figure
     st.markdown("---")
 
     st.subheader("5.7 Latest Vaccination Status Distribution")
@@ -727,6 +744,7 @@ with tab2:
                 ax_pie.set_title(f'Latest Vaccination Status Distribution ({date_range[1].strftime("%Y-%m-%d")})')
                 ax_pie.axis('equal') # Equal aspect ratio ensures that pie is drawn as a circle.
                 st.pyplot(fig_pie)
+                plt.close(fig_pie) # Close the figure
             else:
                 st.info("No vaccination status data to display for the selected period. This might happen if 'people_vaccinated' or 'people_fully_vaccinated' counts are consistently zero or missing for the latest dates.")
         else:
@@ -772,6 +790,7 @@ with tab2:
         ax_agg.ticklabel_format(style='plain', axis='y')
         plt.tight_layout()
         st.pyplot(fig_agg)
+        plt.close(fig_agg) # Close the figure
     st.markdown("---")
 
     if len(selected_countries) > 1:
@@ -792,6 +811,7 @@ with tab2:
             ax_kde.ticklabel_format(style='plain', axis='x')
             plt.tight_layout()
             st.pyplot(fig_kde)
+            plt.close(fig_kde) # Close the figure
     else:
         st.info("Select multiple countries in the sidebar to view comparative density plots.")
     st.markdown("---")
@@ -817,6 +837,7 @@ with tab2:
         ax_growth.yaxis.set_major_formatter(plt.FuncFormatter(lambda y, _: f'{y:.0%}')) # Format as percentage
         plt.tight_layout()
         st.pyplot(fig_growth)
+        plt.close(fig_growth) # Close the figure
     st.markdown("---")
 
     st.subheader("5.11 Lag Plot for Autocorrelation")
@@ -852,6 +873,7 @@ with tab2:
             ax_lag.ticklabel_format(style='plain', axis='both')
             plt.tight_layout()
             st.pyplot(fig_lag)
+            plt.close(fig_lag) # Close the figure
         else:
             st.info("Not enough data to generate lag plot for the selected parameters. Try a smaller lag or wider date range.")
     st.markdown("---")
