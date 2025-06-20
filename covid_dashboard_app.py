@@ -307,7 +307,8 @@ def display_about_section():
     )
     st.markdown("---")
     st.write("Developed by Augustine Khumalo")
-    st.markdown("""
+    st.markdown(
+        """
     **Connect with me:**
     * **LinkedIn:** [Augustine Khumalo](https://www.linkedin.com/in/augustine-khumalo)
     * **Mobile:** +27 65 857 3653 
@@ -350,11 +351,11 @@ def display_data_preprocessing_section(full_data):
     st.markdown(
         """
         The following steps are applied during data loading:
-        - **Date Conversion:** The `date` column is converted to datetime objects to enable time-series analysis.
-        - **Handling Missing Numerical Values:** `NaN` values in `total_vaccinations`, `people_vaccinated`, `people_fully_vaccinated`, `New_deaths`, and `ratio` are filled with `0`. This assumes that missing vaccination/death counts imply no new cases/vaccinations on that day.
-        - **Population Data Cleaning:** The `population` column is converted to a numeric type, and any rows where `population` is `NaN` or `0` are removed. This is crucial for per-capita calculations.
-        - **Ensuring Non-Negative Daily Vaccinations:** `daily_vaccinations` are ensured to be non-negative by taking `max(0, x)`.
-        - **Handling Infinite Growth Rates:** Infinite values in `daily_deaths_growth_rate` and `daily_vaccinations_growth_rate` (which can occur from division by zero) are replaced with `NaN`, and then `NaN`s are filled with `0`.
+        -   **Date Conversion:** The `date` column is converted to datetime objects to enable time-series analysis.
+        -   **Handling Missing Numerical Values:** `NaN` values in `total_vaccinations`, `people_vaccinated`, `people_fully_vaccinated`, `New_deaths`, and `ratio` are filled with `0`. This assumes that missing vaccination/death counts imply no new cases/vaccinations on that day.
+        -   **Population Data Cleaning:** The `population` column is converted to a numeric type, and any rows where `population` is `NaN` or `0` are removed. This is crucial for per-capita calculations.
+        -   **Ensuring Non-Negative Daily Vaccinations:** `daily_vaccinations` are ensured to be non-negative by taking `max(0, x)`.
+        -   **Handling Infinite Growth Rates:** Infinite values in `daily_deaths_growth_rate` and `daily_vaccinations_growth_rate` (which can occur from division by zero) are replaced with `NaN`, and then `NaN`s are filled with `0`.
         """
     )
     st.markdown("---")
@@ -363,14 +364,14 @@ def display_data_preprocessing_section(full_data):
     st.markdown(
         """
         New, more insightful features are derived from the raw data to provide a richer context for analysis and better inputs for the machine learning models:
-        - **`vaccination_coverage`:** Calculated as `people_fully_vaccinated / population`. This represents the proportion of the population that is fully vaccinated (ranges from 0 to 1).
-        - **`new_deaths_per_million`:** Calculated as `(New_deaths / population) * 1,000,000`. This normalizes daily death counts by population size, making comparisons across countries more meaningful.
-        - **`total_vaccinations_per_hundred`:** Calculated as `(total_vaccinations / population) * 100`. This normalizes total vaccinations by population, providing a per-capita vaccination rate.
-        - **`daily_vaccinations`:** Calculated as the daily difference in `total_vaccinations` for each country. This represents the number of vaccine doses administered on a given day.
-        - **`daily_vaccinated_per_million`:** Calculated as `(daily_vaccinations / population) * 1,000,000`. Normalizes daily vaccination rates by population.
-        - **`daily_deaths_growth_rate`:** The percentage change in `New_deaths` from the previous day. Helps identify acceleration or deceleration of deaths.
-        - **`daily_vaccinations_growth_rate`:** The percentage change in `daily_vaccinations` from the previous day. Indicates the pace of vaccination efforts.
-        - **`days_since_start`:** The number of days that have passed since the earliest date in the entire dataset. This time-based feature can capture overall trends in time-series models.
+        -   **`vaccination_coverage`:** Calculated as `people_fully_vaccinated / population`. This represents the proportion of the population that is fully vaccinated (ranges from 0 to 1).
+        -   **`new_deaths_per_million`:** Calculated as `(New_deaths / population) * 1,000,000`. This normalizes daily death counts by population size, making comparisons across countries more meaningful.
+        -   **`total_vaccinations_per_hundred`:** Calculated as `(total_vaccinations / population) * 100`. This normalizes total vaccinations by population, providing a per-capita vaccination rate.
+        -   **`daily_vaccinations`:** Calculated as the daily difference in `total_vaccinations` for each country. This represents the number of vaccine doses administered on a given day.
+        -   **`daily_vaccinated_per_million`:** Calculated as `(daily_vaccinations / population) * 1,000,000`. Normalizes daily vaccination rates by population.
+        -   **`daily_deaths_growth_rate`:** The percentage change in `New_deaths` from the previous day. Helps identify acceleration or deceleration of deaths.
+        -   **`daily_vaccinations_growth_rate`:** The percentage change in `daily_vaccinations` from the previous day. Indicates the pace of vaccination efforts.
+        -   **`days_since_start`:** The number of days that have passed since the earliest date in the entire dataset. This time-based feature can capture overall trends in time-series models.
         """
     )
     st.markdown("---")
