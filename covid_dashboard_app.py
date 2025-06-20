@@ -1,9 +1,9 @@
+# covid_dashboard_app.py
 # This script creates an interactive Streamlit dashboard
 # for analyzing COVID-19 vaccination and mortality data,
 # and predicting new deaths or daily vaccinations using trained regression models.
-# It now features a simplified tabbed interface and enhanced interactivity,
-# with a stronger focus on comparative analysis for multiple selected countries,
-# and improved user-friendliness across various devices.
+# It now features a simplified sidebar-based navigation for improved usability,
+# especially on mobile, ensuring tabs are always accessible.
 
 import streamlit as st
 import pandas as pd
@@ -32,7 +32,7 @@ from plotting_utils import (
 # Centralize key configurations for easier management and scalability.
 PAGE_TITLE = "COVID-19 Vaccination & Mortality Dashboard"
 LAYOUT = "wide"
-INITIAL_SIDEBAR_STATE = "auto"
+INITIAL_SIDEBAR_STATE = "expanded" # Set sidebar to expanded by default for better visibility
 DATA_FILE = 'covid_vaccination_mortality.csv'
 DEATHS_MODEL_FILE = 'trained_deaths_model.pkl'
 DEATHS_FEATURES_FILE = 'model_features_deaths.pkl'
@@ -58,7 +58,7 @@ def display_initial_guide():
         
         **To get started:**
         1.  Use the **filters on the left sidebar** to select specific countries and a date range relevant to your analysis.
-        2.  Navigate through the **tabs below** to view detailed data overviews, interactive trends and insights, prediction models, and information about the models used.
+        2.  Navigate through the **sections using the sidebar menu** to view detailed data overviews, interactive trends and insights, prediction models, and information about the models used.
         
         This dashboard is designed to be user-friendly and responsive across different devices, including mobile phones, tablets, and laptops.
         """
@@ -92,10 +92,10 @@ if filtered_data.empty:
 default_days_since_start_date_for_input = (covid_data['date'].max() + pd.Timedelta(days=7)).date()
 
 
-# --- Tab 3: Prediction Tool Function ---
-def display_prediction_tool_tab(filtered_data, covid_data, models, model_features_dict, default_days_since_start_date_for_input):
+# --- Section Functions (formerly Tab functions) ---
+def display_prediction_tool_section(filtered_data, covid_data, models, model_features_dict, default_days_since_start_date_for_input):
     """
-    Manages the content for the Prediction Tab.
+    Manages the content for the Prediction Section.
     
     Args:
         filtered_data (pandas.DataFrame): The currently filtered data (for default input values).
@@ -163,7 +163,7 @@ def display_prediction_tool_tab(filtered_data, covid_data, models, model_feature
             prediction_date_input = st.date_input("Select Prediction Date:",
                                             value=default_days_since_start_date_for_input,
                                             min_value=covid_data['date'].min().date(),
-                                            key='prediction_date_input_tab3'
+                                            key='prediction_date_input_section3' # Updated key
                                             )
             
             prediction_datetime = datetime.datetime.combine(prediction_date_input, datetime.time.min)
@@ -194,10 +194,9 @@ def display_prediction_tool_tab(filtered_data, covid_data, models, model_feature
                     st.warning("Ensure all input values are valid numbers. If the issue persists, verify that the trained model files (`.pkl` files) are correctly generated and loaded.")
     st.markdown("---")
 
-# --- Tab 4: Model & About Functions ---
-def display_model_insights_tab(models, model_features_dict, full_data):
+def display_model_insights_section(models, model_features_dict, full_data):
     """
-    Manages the content for the Model Insights and Performance tab.
+    Manages the content for the Model Insights and Performance section.
     
     Args:
         models (dict): Dictionary of loaded ML models.
@@ -210,7 +209,7 @@ def display_model_insights_tab(models, model_features_dict, full_data):
     model_insight_selector = st.selectbox(
         "Select Model to View Insights:",
         options=['New Deaths Model', 'Daily Vaccinations Model'],
-        key='model_insight_selector'
+        key='model_insight_selector_section' # Updated key
     )
 
     selected_model_name_key = 'deaths' if model_insight_selector == 'New Deaths Model' else 'vaccinations'
@@ -294,7 +293,8 @@ def display_about_section():
         -   **Exploratory Data Analysis (EDA):** Creating insightful visualizations with `matplotlib` and `seaborn` to uncover trends, distributions, and relationships within the data.
         -   **Supervised Machine Learning (Regression):** Building and evaluating robust `RandomForestRegressor` models from `scikit-learn` to predict continuous outcomes (new deaths and daily vaccinations).
         -   **Model Persistence:** Saving and loading trained models using `joblib` for efficient deployment and reuse.
-        -   **Interactive Dashboard Development:** Designing a dynamic and user-friendly web application with `Streamlit`, allowing real-time interaction with data and models.
+        -   **Interactive Web Application Development:** Building a user-friendly dashboard with `Streamlit`.
+        -   **Data Visualization:** Creating informative plots with `matplotlib` and `seaborn`.
 
         **Data Source:**
         The dataset used for this project is **"COVID vaccination vs. mortality"** from Kaggle:
@@ -307,9 +307,15 @@ def display_about_section():
         """
     )
     st.markdown("---")
-    st.write("Developed by Augustine Khumalo (Your Name) | Connect with me on LinkedIn!")
+    st.write("Developed by Augustine Khumalo")
+    st.markdown("""
+    **Connect with me:**
+    * **LinkedIn:** [Augustine Khumalo](https://www.linkedin.com/in/augustine-khumalo)
+    * **Mobile:** +27 65 857 3653 
+    * **Email:** mr.a.s.khumalo@gmail.com 
+    """)
 
-def display_data_preprocessing_tab(full_data):
+def display_data_preprocessing_section(full_data):
     """
     Displays insights into the data preprocessing steps.
     
@@ -377,11 +383,23 @@ def display_data_preprocessing_tab(full_data):
     st.markdown("---")
 
 
-# --- Main Application Flow ---
-# Using tabs helps organize content and keeps the interface clean.
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs(["📊 Data Overview", "📈 Trends & Insights", "🔍 Data Diagnostics", "🧪 Advanced Analysis", "📈 Forecasting", "📊 Scenario Analysis", "⚙️ Model Info & About"])
+# --- Main Application Flow (using sidebar navigation) ---
+# Define the navigation options for the sidebar
+PAGES = {
+    "📊 Data Overview": "data_overview",
+    "📈 Trends & Insights": "trends_insights",
+    "🔍 Data Diagnostics": "data_diagnostics",
+    "🧪 Advanced Analysis": "advanced_analysis",
+    "📈 Forecasting": "forecasting",
+    "📊 Scenario Analysis": "scenario_analysis",
+    "⚙️ Model Info & About": "model_info_about"
+}
 
-with tab1:
+st.sidebar.title("Dashboard Navigation")
+selected_page = st.sidebar.radio("Go to:", list(PAGES.keys()))
+
+# Use if/elif/else to display content based on selection
+if selected_page == "📊 Data Overview":
     st.header("📊 Data Overview & Key Statistics")
     st.write(f"Explore the raw data and key aggregated statistics for **{', '.join(selected_countries)}** from **{date_range[0].strftime('%Y-%m-%d')}** to **{date_range[1].strftime('%Y-%m-%d')}**.")
     display_summary_metrics(filtered_data)
@@ -391,8 +409,6 @@ with tab1:
     display_latest_country_stats(filtered_data)
     generate_bar_plots_for_period_summary(filtered_data)
     
-    # Modified display_top_bottom_countries call for the fix
-    # Add a check for `all_countries_count` before displaying the slider for Top/Bottom N
     all_countries_count_for_top_bottom = len(filtered_data['country'].unique())
     if all_countries_count_for_top_bottom > 1:
         display_top_bottom_countries(filtered_data, 'New_deaths', 'Daily New Deaths', "Adjust 'N' to see more or fewer top/bottom countries by average daily deaths.")
@@ -403,49 +419,49 @@ with tab1:
         st.info("Select multiple countries in the sidebar to view top/bottom countries by various metrics.")
     display_data_dictionary()
 
-with tab2:
+elif selected_page == "📈 Trends & Insights":
     st.header("📈 Dynamic COVID-19 Trends & Insights")
-    st.write("Visualize how key COVID-19 metrics have evolved over time and explore relationships between them. All plots automatically update based on your country and date selections from the 'Data Overview' tab.")
+    st.write("Visualize how key COVID-19 metrics have evolved over time and explore relationships between them. All plots automatically update based on your country and date selections from the sidebar.")
     plot_time_series(filtered_data)
     plot_vaccination_progress(filtered_data)
     plot_cumulative_and_rolling_averages(filtered_data)
     plot_distributions_and_correlations(filtered_data)
     plot_interactive_scatter(filtered_data)
-    plot_comparative_distributions(filtered_data) # This function handles the multiple country check internally
+    plot_comparative_distributions(filtered_data) 
     plot_daily_change(filtered_data)
     plot_latest_vaccination_status_distribution(filtered_data, date_range[1])
     plot_monthly_yearly_trends(filtered_data)
     plot_growth_rate_trends(filtered_data)
     plot_lag_plot(filtered_data)
     plot_daily_metrics_comparison_for_date(filtered_data)
-    plot_geographic_distribution_map(covid_data) # Pass full_data for map to show all countries
+    plot_geographic_distribution_map(covid_data) 
 
-with tab3: # New Data Diagnostics Tab
+elif selected_page == "🔍 Data Diagnostics":
     st.header("🔍 Data Diagnostics & Quality Check")
-    st.write("This tab provides insights into the data's quality, completeness, and structure, which are crucial for reliable analysis.")
+    st.write("This section provides insights into the data's quality, completeness, and structure, which are crucial for reliable analysis.")
     display_data_types_and_uniques(filtered_data)
-    plot_missing_values_heatmap(filtered_data) # Use filtered_data to reflect current view
+    plot_missing_values_heatmap(filtered_data) 
 
-with tab4: # Existing Advanced Analysis Tab (now shifted)
+elif selected_page == "🧪 Advanced Analysis":
     st.header("🧪 Advanced Analysis & Time Series Insights")
     st.write("Explore more sophisticated analyses for in-depth understanding of COVID-19 data patterns.")
     plot_pair_plot(filtered_data)
     plot_time_series_decomposition(filtered_data)
     plot_outliers_boxplot(filtered_data)
 
-with tab5: # New Forecasting Tab
+elif selected_page == "📈 Forecasting":
     st.header("📈 COVID-19 Forecasting")
     st.write("This section demonstrates basic and conceptual advanced forecasting capabilities for key COVID-19 metrics. Select a single country in the sidebar for best results.")
     display_simple_forecast(filtered_data)
-    display_advanced_forecast(filtered_data) # Placeholder for more advanced forecasting models
+    display_advanced_forecast(filtered_data)
 
-with tab6: # New Scenario Analysis Tab
+elif selected_page == "📊 Scenario Analysis":
     st.header("📊 Scenario Analysis")
     st.write("Explore 'what-if' scenarios by adjusting key input parameters and observing their impact on predicted outcomes (New Deaths or Daily Vaccinations) based on our machine learning models.")
-    display_scenario_analysis(filtered_data, models, model_features_dict, covid_data) # Passed covid_data here
+    display_scenario_analysis(filtered_data, models, model_features_dict, covid_data)
 
-with tab7: # Model Info & About Tab (now shifted)
-    display_model_insights_tab(models, model_features_dict, covid_data)
+elif selected_page == "⚙️ Model Info & About":
+    display_model_insights_section(models, model_features_dict, covid_data)
     display_about_section()
-    st.subheader("Data Preprocessing Steps") # Added Data Preprocessing as a sub-section
-    display_data_preprocessing_tab(covid_data) # Display data preprocessing details
+    st.subheader("Data Preprocessing Steps") 
+    display_data_preprocessing_section(covid_data)
