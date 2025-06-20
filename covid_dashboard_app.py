@@ -310,8 +310,8 @@ def display_about_section():
     st.markdown("""
     **Connect with me:**
     * **LinkedIn:** [Augustine Khumalo](https://www.linkedin.com/in/augustine-khumalo)
-    * **Mobile:** +27 78 860 7636 (Also available on WhatsApp)
-    * **Email:** augustine.khumalo@example.com (Replace with your actual email)
+    * **Mobile:** +27 65 857 3653 
+    * **Email:** mr.a.s.khumalo@gmail.com 
     """)
 
 def display_data_preprocessing_section(full_data):
