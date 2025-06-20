@@ -162,7 +162,7 @@ def display_prediction_tool_section(filtered_data, covid_data, models, model_fea
             prediction_date_input = st.date_input("Select Prediction Date:",
                                             value=default_days_since_start_date_for_input,
                                             min_value=covid_data['date'].min().date(),
-                                            key='prediction_date_input_section3' # Updated key
+                                            key='prediction_date_input_section3'
                                             )
             
             prediction_datetime = datetime.datetime.combine(prediction_date_input, datetime.time.min)
@@ -208,7 +208,7 @@ def display_model_insights_section(models, model_features_dict, full_data):
     model_insight_selector = st.selectbox(
         "Select Model to View Insights:",
         options=['New Deaths Model', 'Daily Vaccinations Model'],
-        key='model_insight_selector_section' # Updated key
+        key='model_insight_selector_section'
     )
 
     selected_model_name_key = 'deaths' if model_insight_selector == 'New Deaths Model' else 'vaccinations'
@@ -310,8 +310,8 @@ def display_about_section():
     st.markdown("""
     **Connect with me:**
     * **LinkedIn:** [Augustine Khumalo](https://www.linkedin.com/in/augustine-khumalo)
-    * **Mobile:** +27 65 857 3653 
-    * **Email:** mr.a.s.khumalo@gmail.com 
+    * **Mobile:** +27 78 860 7636 (Also available on WhatsApp)
+    * **Email:** augustine.khumalo@example.com (Replace with your actual email)
     """)
 
 def display_data_preprocessing_section(full_data):
