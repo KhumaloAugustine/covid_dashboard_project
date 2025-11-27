@@ -8,8 +8,15 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import datetime
-from sklearn.model_selection import train_test_split # For model evaluation
-from sklearn.metrics import mean_squared_error, r2_score # For model evaluation metrics
+from sklearn.model_selection import train_test_split  # For model evaluation
+from sklearn.metrics import mean_squared_error, r2_score  # For model evaluation metrics
+
+# Import centralized configuration
+from config import (
+    PAGE_TITLE, LAYOUT, INITIAL_SIDEBAR_STATE,
+    DATA_FILE, DEATHS_MODEL_FILE, DEATHS_FEATURES_FILE,
+    VACC_MODEL_FILE, VACC_FEATURES_FILE, DEFAULT_FEATURE_VALUES, PAGES
+)
 
 # Import utility functions from utils.py and plotting_utils.py
 from utils import load_data, load_models, get_default_input_value, setup_sidebar_filters
@@ -26,17 +33,6 @@ from plotting_utils import (
     plot_outliers_boxplot, display_data_types_and_uniques, plot_missing_values_heatmap,
     display_simple_forecast, display_advanced_forecast, display_scenario_analysis
 )
-
-# --- Configuration ---
-# Centralize key configurations for easier management and scalability.
-PAGE_TITLE = "COVID-19 Vaccination & Mortality Dashboard"
-LAYOUT = "wide"
-INITIAL_SIDEBAR_STATE = "expanded" # Set sidebar to expanded by default for better visibility
-DATA_FILE = 'covid_vaccination_mortality.csv'
-DEATHS_MODEL_FILE = 'trained_deaths_model.pkl'
-DEATHS_FEATURES_FILE = 'model_features_deaths.pkl'
-VACC_MODEL_FILE = 'trained_vaccinations_model.pkl'
-VACC_FEATURES_FILE = 'model_features_vaccinations.pkl'
 
 # --- 1. Dashboard Configuration and Title ---
 st.set_page_config(
@@ -131,17 +127,12 @@ def display_prediction_tool_section(filtered_data, covid_data, models, model_fea
         input_values = {}
         input_cols = st.columns(3)
 
-        feature_defaults = {
-            'total_vaccinations': 100000.0, 'people_vaccinated': 50000.0, 'people_fully_vaccinated': 25000.0,
-            'population': 10000000.0, 'ratio': 0.05, 'vaccination_coverage': 0.025, 'New_deaths': 10.0, 
-        }
-
         with input_cols[0]:
             for feature in ['total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated']:
                 if feature in current_features:
                     input_values[feature] = st.number_input(
                         feature.replace('_', ' ').title() + ":",
-                        min_value=0.0, value=get_default_input_value(filtered_data, feature, feature_defaults.get(feature, 0.0)),
+                        min_value=0.0, value=get_default_input_value(filtered_data, feature, DEFAULT_FEATURE_VALUES.get(feature, 0.0)),
                         step=10000.0, format="%.0f", key=f'pred_input_{feature}'
                     )
         with input_cols[1]:
@@ -155,7 +146,7 @@ def display_prediction_tool_section(filtered_data, covid_data, models, model_fea
                     input_values[feature] = st.number_input(
                         feature.replace('_', ' ').title() + ":",
                         min_value=min_val, max_value=max_val,
-                        value=get_default_input_value(filtered_data, feature, feature_defaults.get(feature, min_val)),
+                        value=get_default_input_value(filtered_data, feature, DEFAULT_FEATURE_VALUES.get(feature, min_val)),
                         step=step_val, format=format_str, key=f'pred_input_{feature}'
                     )
         with input_cols[2]:
@@ -172,7 +163,7 @@ def display_prediction_tool_section(filtered_data, covid_data, models, model_fea
             if 'New_deaths' in current_features: 
                 input_values['New_deaths'] = st.number_input("New Deaths (for Daily Vaccinations Model):",
                                                              min_value=0.0,
-                                                             value=get_default_input_value(filtered_data, 'New_deaths', feature_defaults.get('New_deaths', 0.0)),
+                                                             value=get_default_input_value(filtered_data, 'New_deaths', DEFAULT_FEATURE_VALUES.get('New_deaths', 0.0)),
                                                              step=100.0, format="%.0f", key='pred_input_new_deaths'
                                                             )
 
@@ -384,16 +375,7 @@ def display_data_preprocessing_section(full_data):
 
 
 # --- Main Application Flow (using sidebar navigation) ---
-# Define the navigation options for the sidebar
-PAGES = {
-    "📊 Data Overview": "data_overview",
-    "📈 Trends & Insights": "trends_insights",
-    "🔍 Data Diagnostics": "data_diagnostics",
-    "🧪 Advanced Analysis": "advanced_analysis",
-    "📈 Forecasting": "forecasting",
-    "📊 Scenario Analysis": "scenario_analysis",
-    "⚙️ Model Info & About": "model_info_about"
-}
+# Navigation pages are defined in config.py
 
 st.sidebar.title("Dashboard Navigation")
 selected_page = st.sidebar.radio("Go to:", list(PAGES.keys()))
