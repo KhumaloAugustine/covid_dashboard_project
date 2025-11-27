@@ -8,7 +8,25 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import numpy as np
 import plotly.express as px
-from statsmodels.tsa.seasonal import STL # For time series decomposition
+from statsmodels.tsa.seasonal import STL  # For time series decomposition
+
+# Import centralized configuration
+from config import CORRELATION_COLUMNS, DATA_FILE
+
+
+def configure_axis_formatting(ax, x_rotation=45, y_plain=True):
+    """
+    Apply common axis formatting to reduce code duplication.
+    
+    Args:
+        ax: Matplotlib axis object
+        x_rotation: Rotation angle for x-axis labels
+        y_plain: Whether to use plain style for y-axis numbers
+    """
+    if x_rotation:
+        ax.tick_params(axis='x', rotation=x_rotation)
+    if y_plain:
+        ax.ticklabel_format(style='plain', axis='y')
 
 def plot_matplotlib_figure(fig, title=""):
     """
@@ -446,13 +464,9 @@ def plot_distributions_and_correlations(data):
         st.write("#### Correlation Heatmap of Numerical Features")
         st.write("A correlation heatmap shows how strongly pairs of numerical variables are related. Values closer to 1 or -1 indicate a stronger relationship (positive or negative).")
         fig_corr, ax_corr = plt.subplots(figsize=(10, 8))
-        numerical_data_for_corr = data[
-            ['total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated',
-             'New_deaths', 'population', 'ratio', 'vaccination_coverage', 'days_since_start',
-             'new_deaths_per_million', 'total_vaccinations_per_hundred',
-             'daily_vaccinations', 'daily_vaccinated_per_million',
-             'daily_deaths_growth_rate', 'daily_vaccinations_growth_rate']
-        ].corr()
+        # Use CORRELATION_COLUMNS from config, filtering for columns that exist in data
+        available_corr_cols = [col for col in CORRELATION_COLUMNS if col in data.columns]
+        numerical_data_for_corr = data[available_corr_cols].corr()
         sns.heatmap(numerical_data_for_corr, annot=True, cmap='coolwarm', fmt=".2f", linewidths=.5, ax=ax_corr)
         ax_corr.set_title('Correlation Matrix of Key Metrics')
         plot_matplotlib_figure(fig_corr)
@@ -469,20 +483,21 @@ def plot_interactive_scatter(data):
     st.subheader("Interactive Scatter Plot: Explore Relationships")
     st.write("Select any two numerical metrics to visualize their relationship using a scatter plot. A regression line can be added to show the general trend.")
     
-    numerical_cols = ['total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated',
-                      'New_deaths', 'population', 'ratio', 'vaccination_coverage', 'days_since_start',
-                      'new_deaths_per_million', 'total_vaccinations_per_hundred',
-                      'daily_vaccinations', 'daily_vaccinated_per_million',
-                      'daily_deaths_growth_rate', 'daily_vaccinations_growth_rate'] 
+    # Use CORRELATION_COLUMNS from config, filtering for columns that exist in data
+    numerical_cols = [col for col in CORRELATION_COLUMNS if col in data.columns]
+    
+    # Determine default indices safely
+    default_x_idx = numerical_cols.index('vaccination_coverage') if 'vaccination_coverage' in numerical_cols else 0
+    default_y_idx = numerical_cols.index('New_deaths') if 'New_deaths' in numerical_cols else 0
     
     scatter_x = st.selectbox("Select X-axis for Scatter Plot:", 
                              options=numerical_cols, 
-                             index=numerical_cols.index('vaccination_coverage'), 
+                             index=default_x_idx, 
                              key='scatter_x',
                              help="Choose the metric for the horizontal axis.") 
     scatter_y = st.selectbox("Select Y-axis for Scatter Plot:", 
                              options=numerical_cols, 
-                             index=numerical_cols.index('New_deaths'), 
+                             index=default_y_idx, 
                              key='scatter_y',
                              help="Choose the metric for the vertical axis.") 
     scatter_hue = st.selectbox("Color points by (Optional):", 

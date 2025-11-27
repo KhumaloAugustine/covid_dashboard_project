@@ -1,32 +1,24 @@
 # This file contains utility functions for data loading, model loading,
 # and general helper functions used across the COVID-19 dashboard application.
+# Follows Single Responsibility Principle with focused, cohesive functions.
 
 import streamlit as st
 import pandas as pd
 import joblib
-import numpy as np
-import datetime
 
-# --- Configuration for file paths (can be moved to a separate config.py if more complex) ---
-DATA_FILE = 'covid_vaccination_mortality.csv'
-DEATHS_MODEL_FILE = 'trained_deaths_model.pkl'
-DEATHS_FEATURES_FILE = 'model_features_deaths.pkl'
-VACC_MODEL_FILE = 'trained_vaccinations_model.pkl'
-VACC_FEATURES_FILE = 'model_features_vaccinations.pkl'
+# Import centralized configuration
+from config import (
+    DATA_FILE, DEATHS_MODEL_FILE, DEATHS_FEATURES_FILE,
+    VACC_MODEL_FILE, VACC_FEATURES_FILE, DEFAULT_COUNTRIES
+)
+from data_preprocessing import preprocess_covid_data
 
 @st.cache_data
 def load_data(file_path=DATA_FILE):
     """
     Loads the COVID-19 dataset from a CSV file and performs initial preprocessing.
     
-    Preprocessing steps include:
-    - Converting 'date' column to datetime objects.
-    - Filling NaN values with 0 for specified numerical columns (total_vaccinations, etc.).
-    - Ensuring 'population' is numeric and dropping rows with zero or missing population.
-    - Engineering new features: 'vaccination_coverage', 'new_deaths_per_million',
-      'total_vaccinations_per_hundred', 'daily_vaccinations',
-      'daily_vaccinated_per_million', 'daily_deaths_growth_rate',
-      'daily_vaccinations_growth_rate', and 'days_since_start'.
+    Uses the centralized data_preprocessing module for all preprocessing steps.
     
     Args:
         file_path (str): The path to the CSV data file.
@@ -41,51 +33,11 @@ def load_data(file_path=DATA_FILE):
     with st.spinner(f"Loading and preparing data from {file_path}... This may take a moment."):
         try:
             data = pd.read_csv(file_path, index_col=0)
-            data['date'] = pd.to_datetime(data['date'])
-
-            # Fill NaNs with 0 for relevant numerical columns
-            numerical_cols_to_fill_zero = [
-                'total_vaccinations', 'people_vaccinated', 'people_fully_vaccinated', 'New_deaths', 'ratio'
-            ]
-            for col in numerical_cols_to_fill_zero:
-                data[col] = data[col].fillna(0)
-
-            # Ensure population is numeric and handle potential zeros/NaNs
-            data['population'] = pd.to_numeric(data['population'], errors='coerce')
-            data.dropna(subset=['population'], inplace=True)
-            data = data[data['population'] > 0] # Filter out entries with zero population
-
-            # Feature Engineering: Create new, more insightful metrics
-            data['vaccination_coverage'] = data['people_fully_vaccinated'] / data['population']
-            data['vaccination_coverage'].fillna(0, inplace=True) # Handle division by zero or NaNs
-
-            data['new_deaths_per_million'] = (data['New_deaths'] / data['population']) * 1_000_000
-            data['total_vaccinations_per_hundred'] = (data['total_vaccinations'] / data['population']) * 100
-            
-            # Calculate daily vaccinations (difference from previous day's total_vaccinations)
-            # Sorting by country and date is essential for correct difference calculation across groups.
-            data = data.sort_values(by=['country', 'date']) 
-            data['daily_vaccinations'] = data.groupby('country')['total_vaccinations'].diff().fillna(0)
-            data['daily_vaccinations'] = data['daily_vaccinations'].apply(lambda x: max(0, x)) # Ensure non-negative daily counts
-            
-            data['daily_vaccinated_per_million'] = (data['daily_vaccinations'] / data['population']) * 1_000_000
-            data['daily_vaccinated_per_million'].fillna(0, inplace=True) # Fill NaNs for consistency
-
-            # Growth Rates (percentage change) for daily metrics
-            # A small epsilon is added to the denominator for robustness against division by zero in pct_change.
-            data['daily_deaths_growth_rate'] = data.groupby('country')['New_deaths'].pct_change().replace([np.inf, -np.inf], np.nan)
-            data['daily_deaths_growth_rate'].fillna(0, inplace=True) 
-
-            data['daily_vaccinations_growth_rate'] = data.groupby('country')['daily_vaccinations'].pct_change().replace([np.inf, -np.inf], np.nan)
-            data['daily_vaccinations_growth_rate'].fillna(0, inplace=True)
-
-            min_date = data['date'].min()
-            data['days_since_start'] = (data['date'] - min_date).dt.days
-
+            data = preprocess_covid_data(data)
             return data
         except FileNotFoundError:
             st.error(f"Error: '{file_path}' not found. Please ensure it's in the same directory as the script.")
-            st.stop() # Stop the app if data is not found
+            st.stop()
         except Exception as e:
             st.error(f"An unexpected error occurred during data loading: {e}")
             st.stop()
@@ -179,11 +131,16 @@ def setup_sidebar_filters(data):
     st.sidebar.write("Use these filters to customize the data displayed in the main sections of the dashboard.")
 
     all_countries = data['country'].unique().tolist()
+    
+    # Use default countries from config if available, otherwise use first 3 countries
+    default_selection = [c for c in DEFAULT_COUNTRIES if c in all_countries]
+    if not default_selection:
+        default_selection = all_countries[:min(3, len(all_countries))]
+    
     selected_countries = st.sidebar.multiselect(
         "Select Country(ies):",
         options=all_countries,
-        # Set a sensible default: US, India, Brazil if available, otherwise first 3 countries
-        default=['United States', 'India', 'Brazil'] if 'United States' in all_countries else all_countries[:min(3, len(all_countries))]
+        default=default_selection
     )
 
     min_date_data = data['date'].min().to_pydatetime()
